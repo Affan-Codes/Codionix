@@ -1,0 +1,26 @@
+node_modules/
+# Keep environment variables out of version control
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+
+# Prisma
+prisma/dev.db
+
+# Prisma generated client
+src/generated/
+
+# Testing
+coverage/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store

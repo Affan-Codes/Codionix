@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===================================
+// ENUMS
+// ===================================
+
+enum UserRole {
+  STUDENT
+  MENTOR
+  EMPLOYER
+  ADMIN
+}
+
+enum ProjectType {
+  PROJECT
+  INTERNSHIP
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ProjectStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+// ===================================
+// MODELS
+// ===================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  fullName          String
+  role              UserRole  @default(STUDENT)
+  phone             String?
+  bio               String?   @db.Text
+  profilePictureUrl String?
+  linkedinUrl       String?
+  githubUrl         String?
+  skills            String[]
+  isEmailVerified   Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  projects      Project[]      @relation("ProjectCreator")
+  applications  Application[]  @relation("StudentApplications")
+  reviewedApps  Application[]  @relation("ReviewedApplications")
+  feedbackGiven Feedback[]     @relation("MentorFeedback")
+  refreshTokens RefreshToken[]
+  admin         Admin?
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Project {
+  id                String          @id @default(uuid())
+  createdById       String
+  title             String          @db.VarChar(100)
+  description       String          @db.Text
+  skills            String[]
+  duration          String
+  deadline          DateTime
+  projectType       ProjectType     @default(PROJECT)
+  stipend           Decimal?        @db.Decimal(10, 2)
+  isRemote          Boolean         @default(true)
+  difficultyLevel   DifficultyLevel @default(INTERMEDIATE)
+  status            ProjectStatus   @default(DRAFT)
+  companyName       String?
+  location          String?
+  maxApplicants     Int?            @default(10)
+  currentApplicants Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  createdBy    User          @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@index([createdById])
+  @@index([status])
+  @@index([projectType])
+  @@index([deadline])
+  @@index([skills])
+  @@map("projects")
+}
+
+model Application {
+  id              String            @id @default(uuid())
+  projectId       String
+  studentId       String
+  coverLetter     String            @db.Text
+  resumeUrl       String?
+  status          ApplicationStatus @default(PENDING)
+  appliedAt       DateTime          @default(now())
+  reviewedAt      DateTime?
+  reviewerId      String?
+  rejectionReason String?           @db.Text
+
+  // Relations
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  student  User      @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
+  reviewer User?     @relation("ReviewedApplications", fields: [reviewerId], references: [id], onDelete: SetNull)
+  feedback Feedback?
+
+  @@unique([projectId, studentId])
+  @@index([projectId])
+  @@index([studentId])
+  @@index([status])
+  @@map("applications")
+}
+
+model Feedback {
+  id            String   @id @default(uuid())
+  applicationId String   @unique
+  mentorId      String
+  rating        Int
+  feedbackText  String   @db.Text
+  strengths     String[]
+  improvements  String[]
+  isPublic      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  mentor      User        @relation("MentorFeedback", fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([mentorId])
+  @@index([applicationId])
+  @@map("feedback")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Admin {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  permissions String[]
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admins")
+}
