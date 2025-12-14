@@ -1,0 +1,37 @@
+export const USER_ROLES = {
+  STUDENT: 'STUDENT',
+  MENTOR: 'MENTOR',
+  EMPLOYER: 'EMPLOYER',
+  ADMIN: 'ADMIN',
+} as const;
+
+export const PROJECT_STATUS = {
+  DRAFT: 'DRAFT',
+  PUBLISHED: 'PUBLISHED',
+  CLOSED: 'CLOSED',
+} as const;
+
+export const APPLICATION_STATUS = {
+  PENDING: 'PENDING',
+  UNDER_REVIEW: 'UNDER_REVIEW',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+} as const;
+
+export const HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  RATE_LIMIT: 429,
+  INTERNAL_ERROR: 500,
+} as const;
+
+export const TOKEN_TYPES = {
+  ACCESS: 'access',
+  REFRESH: 'refresh',
+} as const;
