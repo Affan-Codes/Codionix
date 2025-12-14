@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { db } from './config/database.js';
 
 const app = express();
 
@@ -60,6 +61,29 @@ app.get('/health', (_req, res) => {
       environment: env.NODE_ENV,
     },
   });
+});
+
+// Database test
+app.get('/db-test', async (_req, res) => {
+  const isHealthy = await db.healthCheck();
+
+  if (isHealthy) {
+    res.json({
+      success: true,
+      data: {
+        status: 'ok',
+        message: 'Database connected successfully',
+      },
+    });
+  } else {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'DATABASE_ERROR',
+        message: 'Database connection failed',
+      },
+    });
+  }
 });
 
 // API routes will be added here
