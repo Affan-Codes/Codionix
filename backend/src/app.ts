@@ -9,6 +9,7 @@ import { logger } from './utils/logger.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { db } from './config/database.js';
+import routes from './routes/index.routes.js';
 
 const app = express();
 
@@ -86,8 +87,8 @@ app.get('/db-test', async (_req, res) => {
   }
 });
 
-// API routes will be added here
-// app.use('/api/v1', routes);
+// API routes
+app.use(`/api/${env.API_VERSION}`, routes);
 
 // 404 handler
 app.use(notFoundHandler);
