@@ -19,8 +19,8 @@ export const updateProfileBaseSchema = z.object({
     .max(500, 'Bio must not exceed 500 characters')
     .trim()
     .nullish(),
-  linkedinUrl: z.string().url('Invalid LinkedIn URL').nullish(),
-  githubUrl: z.string().url('Invalid GitHub URL').nullish(),
+  linkedinUrl: z.url('Invalid LinkedIn URL').nullish(),
+  githubUrl: z.url('Invalid GitHub URL').nullish(),
   skills: z
     .array(z.string().trim().min(1, 'Skill cannot be empty'))
     .max(20, 'Maximum 20 skills allowed')
