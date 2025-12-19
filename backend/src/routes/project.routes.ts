@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as projectController from '../controllers/project.controller.js';
+import * as applicationController from '../controllers/application.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { canCreateProjects } from '../middleware/authorize.js';
 
@@ -30,6 +31,18 @@ router.get(
  * @access  Public
  */
 router.get('/:id', projectController.getProjectById);
+
+/**
+ * @route   GET /api/v1/projects/:id/applications
+ * @desc    Get project's applications
+ * @access  Protected (Project owner only)
+ */
+router.get(
+  '/:id/applications',
+  authenticate,
+  canCreateProjects,
+  applicationController.getProjectApplications
+);
 
 /**
  * @route   POST /api/v1/projects
