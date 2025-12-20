@@ -12,6 +12,7 @@ export const ROUTES = {
   CREATE_PROJECT: "/projects/create",
   APPLICATIONS: "/applications",
   PROFILE: "/profile",
+  UNAUTHORIZED: "/unauthorized",
 } as const;
 
 export const STORAGE_KEYS = {

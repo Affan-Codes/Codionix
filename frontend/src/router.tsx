@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router";
 import { useAuth } from "./context/AuthContext";
 import { ROUTES } from "./constants";
+import { RoleGuard } from "./components/guards/RoleGuard";
 
 // Lazy load pages for better performance
 import { lazy, Suspense } from "react";
@@ -17,6 +18,7 @@ const MyApplications = lazy(
   () => import("@/pages/applications/MyApplications")
 );
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
+const Unauthorized = lazy(() => import("@/pages/Unauthorized"));
 
 // Loading component
 const PageLoader = () => (
@@ -56,6 +58,7 @@ const PublicOnlyRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 export const router = createBrowserRouter([
+  // Public routes
   {
     path: ROUTES.HOME,
     element: (
@@ -84,6 +87,8 @@ export const router = createBrowserRouter([
       </PublicOnlyRoute>
     ),
   },
+
+  // Protected routes
   {
     path: ROUTES.DASHBOARD,
     element: (
@@ -94,6 +99,18 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
   },
+  {
+    path: ROUTES.PROFILE,
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<PageLoader />}>
+          <ProfilePage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+
+  // Public project browsing
   {
     path: ROUTES.PROJECTS,
     element: (
@@ -110,26 +127,47 @@ export const router = createBrowserRouter([
       </Suspense>
     ),
   },
+
+  // Student-only routes
   {
     path: ROUTES.APPLICATIONS,
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
-          <MyApplications />
-        </Suspense>
+        <RoleGuard allowedRoles={["STUDENT"]}>
+          <Suspense fallback={<PageLoader />}>
+            <MyApplications />
+          </Suspense>
+        </RoleGuard>
       </ProtectedRoute>
     ),
   },
+
+  // Mentor/Employer routes (create projects)
   {
-    path: ROUTES.PROFILE,
+    path: ROUTES.CREATE_PROJECT,
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
-          <ProfilePage />
-        </Suspense>
+        <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
+          <Suspense fallback={<PageLoader />}>
+            {/* CreateProjectPage component to be built */}
+            <div>Create Project Page - Coming Soon</div>
+          </Suspense>
+        </RoleGuard>
       </ProtectedRoute>
     ),
   },
+
+  // Error pages
+  {
+    path: ROUTES.UNAUTHORIZED,
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <Unauthorized />
+      </Suspense>
+    ),
+  },
+
+  // Catch-all 404
   {
     path: "*",
     element: <Navigate to={ROUTES.HOME} replace />,
