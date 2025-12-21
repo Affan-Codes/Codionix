@@ -11,11 +11,18 @@ const Login = lazy(() => import("@/pages/auth/Login"));
 const Register = lazy(() => import("@/pages/auth/Register"));
 const Dashboard = lazy(() => import("@/pages/dashboard/Dashboard"));
 const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
+const CreateProjectPage = lazy(
+  () => import("@/pages/projects/CreateProjectPage")
+);
+const EditProjectPage = lazy(() => import("@/pages/projects/EditProjectPage"));
 const ProjectDetailPage = lazy(
   () => import("@/pages/projects/ProjectDetailPage")
 );
 const MyApplications = lazy(
   () => import("@/pages/applications/MyApplications")
+);
+const ProjectApplicantsPage = lazy(
+  () => import("@/pages/projects/ProjectApplicantsPage")
 );
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const Unauthorized = lazy(() => import("@/pages/Unauthorized"));
@@ -149,8 +156,31 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
           <Suspense fallback={<PageLoader />}>
-            {/* CreateProjectPage component to be built */}
-            <div>Create Project Page - Coming Soon</div>
+            <CreateProjectPage />
+          </Suspense>
+        </RoleGuard>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/projects/:id/edit",
+    element: (
+      <ProtectedRoute>
+        <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
+          <Suspense fallback={<PageLoader />}>
+            <EditProjectPage />
+          </Suspense>
+        </RoleGuard>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/projects/:id/applicants",
+    element: (
+      <ProtectedRoute>
+        <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
+          <Suspense fallback={<PageLoader />}>
+            <ProjectApplicantsPage />
           </Suspense>
         </RoleGuard>
       </ProtectedRoute>

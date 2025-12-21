@@ -68,6 +68,7 @@ export interface Project {
   createdBy: {
     id: string;
     fullName: string;
+    role: UserRole;
   };
   createdAt: string;
   updatedAt: string;

@@ -1,5 +1,6 @@
-import { applicationApi } from "@/api/application.api";
-import { ApplicationCard } from "@/components/application/ApplicationCard";
+import { projectApi } from "@/api/project.api";
+import { ApplicantCard } from "@/components/application/ApplicantCard";
+import { ReviewApplicationDialog } from "@/components/application/ReviewApplicationDialog";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,14 +11,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import type { Application } from "@/types";
-import { FileTextIcon, Loader2Icon, SearchIcon } from "lucide-react";
+import type { Application, Project } from "@/types";
+import { ArrowLeftIcon, Loader2Icon, UsersIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
-export default function MyApplications() {
+export default function ProjectApplicantsPage() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  const [project, setProject] = useState<Project | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [filteredApplications, setFilteredApplications] = useState<
     Application[]
@@ -25,26 +29,43 @@ export default function MyApplications() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Fetch applications
+  // Review dialog state
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
+  const [selectedApplication, setSelectedApplication] =
+    useState<Application | null>(null);
+
+  // Fetch project and applications
   useEffect(() => {
-    const fetchApplications = async () => {
+    if (!id) {
+      navigate(ROUTES.PROJECTS);
+      return;
+    }
+
+    const fetchData = async () => {
       setIsLoading(true);
       try {
-        const data = await applicationApi.getMyApplications();
-        setApplications(data);
-        setFilteredApplications(data);
+        // Fetch project details
+        const projectData = await projectApi.getProjectById(id);
+        setProject(projectData);
+
+        // Fetch applications for this project
+        const applicationsData = await projectApi.getProjectApplications(id);
+        setApplications(applicationsData);
+        setFilteredApplications(applicationsData);
       } catch (error: any) {
-        console.error("Failed to fetch applications:", error);
-        toast.error("Failed to load applications", {
-          description: "Please try again later",
+        console.error("Failed to fetch data:", error);
+        toast.error("Failed to load applicants", {
+          description:
+            error.response?.data?.error?.message || "Please try again later",
         });
+        navigate(ROUTES.PROJECTS);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchApplications();
-  }, []);
+    fetchData();
+  }, [id, navigate]);
 
   // Filter applications by status
   useEffect(() => {
@@ -56,6 +77,28 @@ export default function MyApplications() {
       );
     }
   }, [statusFilter, applications]);
+
+  // Handle review click
+  const handleReviewClick = (applicationId: string) => {
+    const application = applications.find((app) => app.id === applicationId);
+    if (application) {
+      setSelectedApplication(application);
+      setReviewDialogOpen(true);
+    }
+  };
+
+  // Handle review success
+  const handleReviewSuccess = async () => {
+    // Refresh applications
+    if (!id) return;
+
+    try {
+      const applicationsData = await projectApi.getProjectApplications(id);
+      setApplications(applicationsData);
+    } catch (error) {
+      console.error("Failed to refresh applications:", error);
+    }
+  };
 
   // Stats calculation
   const stats = {
@@ -76,33 +119,39 @@ export default function MyApplications() {
     );
   }
 
+  if (!project) {
+    return null;
+  }
+
   return (
-    <Layout>
+    <Layout maxWidth="7xl">
       <div className="space-y-6">
+        {/* Back Button */}
+        <Button variant="ghost" asChild>
+          <Link to={`/projects/${id}`}>
+            <ArrowLeftIcon className="h-4 w-4" />
+            Back to Project
+          </Link>
+        </Button>
+
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              My Applications
-            </h1>
-            <p className="mt-2 text-gray-600">
-              Track your project and internship applications
-            </p>
-          </div>
-          <Button onClick={() => navigate(ROUTES.PROJECTS)}>
-            <SearchIcon className="h-4 w-4" />
-            Browse Projects
-          </Button>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Applicants for "{project.title}"
+          </h1>
+          <p className="mt-2 text-gray-600">
+            Review and manage applications for this project
+          </p>
         </div>
 
         {/* Stats Cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-lg border bg-white p-4">
-            <p className="text-sm text-gray-600">Total Applications</p>
+            <p className="text-sm text-gray-600">Total Applicants</p>
             <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
           </div>
           <div className="rounded-lg border bg-yellow-50 p-4">
-            <p className="text-sm text-yellow-800">Pending</p>
+            <p className="text-sm text-yellow-800">Pending Review</p>
             <p className="text-2xl font-bold text-yellow-900">
               {stats.pending}
             </p>
@@ -133,7 +182,7 @@ export default function MyApplications() {
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Applications</SelectItem>
+              <SelectItem value="all">All Applicants</SelectItem>
               <SelectItem value="PENDING">Pending</SelectItem>
               <SelectItem value="UNDER_REVIEW">Under Review</SelectItem>
               <SelectItem value="ACCEPTED">Accepted</SelectItem>
@@ -149,17 +198,14 @@ export default function MyApplications() {
         {applications.length === 0 && (
           <div className="text-center py-12">
             <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 mb-4">
-              <FileTextIcon className="h-8 w-8 text-gray-400" />
+              <UsersIcon className="h-8 w-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No applications yet
+              No applicants yet
             </h3>
-            <p className="text-gray-600 mb-4">
-              Start by browsing projects and applying to ones that interest you.
+            <p className="text-gray-600">
+              Applications will appear here once students start applying.
             </p>
-            <Button onClick={() => navigate(ROUTES.PROJECTS)}>
-              Browse Projects
-            </Button>
           </div>
         )}
 
@@ -167,10 +213,10 @@ export default function MyApplications() {
         {applications.length > 0 && filteredApplications.length === 0 && (
           <div className="text-center py-12">
             <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 mb-4">
-              <FileTextIcon className="h-8 w-8 text-gray-400" />
+              <UsersIcon className="h-8 w-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              No applications found
+              No applicants found
             </h3>
             <p className="text-gray-600 mb-4">
               No applications match the selected filter.
@@ -181,14 +227,26 @@ export default function MyApplications() {
           </div>
         )}
 
-        {/* Applications Grid */}
+        {/* Applicants Grid */}
         {filteredApplications.length > 0 && (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredApplications.map((application) => (
-              <ApplicationCard key={application.id} application={application} />
+              <ApplicantCard
+                key={application.id}
+                application={application}
+                onReview={handleReviewClick}
+              />
             ))}
           </div>
         )}
+
+        {/* Review Dialog */}
+        <ReviewApplicationDialog
+          application={selectedApplication}
+          open={reviewDialogOpen}
+          onOpenChange={setReviewDialogOpen}
+          onSuccess={handleReviewSuccess}
+        />
       </div>
     </Layout>
   );
