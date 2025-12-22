@@ -31,7 +31,10 @@ export default function Login() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormData>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    mode: "onBlur",
+  });
 
   const onSubmit = async (data: LoginFormData) => {
     try {
@@ -74,10 +77,11 @@ export default function Login() {
                 type="email"
                 placeholder="you@example.com"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.email}
                 {...register("email")}
               />
               {errors.email && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.email.message}
                 </p>
               )}
@@ -90,10 +94,11 @@ export default function Login() {
                 type="password"
                 placeholder="••••••••"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.password}
                 {...register("password")}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.password.message}
                 </p>
               )}

@@ -74,6 +74,7 @@ export default function EditProjectPage() {
     formState: { errors, isSubmitting },
   } = useForm<EditProjectFormData>({
     resolver: zodResolver(editProjectSchema),
+    mode: "onBlur",
   });
 
   // Fetch project data
@@ -289,9 +290,10 @@ export default function EditProjectPage() {
                   {...register("title")}
                   placeholder="e.g., Build a React Dashboard for Analytics"
                   disabled={isSubmitting}
+                  aria-invalid={!!errors.title}
                 />
                 {errors.title && (
-                  <p className="text-sm text-destructive">
+                  <p className="text-sm text-destructive" role="alert">
                     {errors.title.message}
                   </p>
                 )}
@@ -308,9 +310,10 @@ export default function EditProjectPage() {
                   placeholder="Describe the project goals, what students will learn, and any specific requirements..."
                   className="w-full min-h-37.5 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={isSubmitting}
+                  aria-invalid={!!errors.description}
                 />
                 {errors.description && (
-                  <p className="text-sm text-destructive">
+                  <p className="text-sm text-destructive" role="alert">
                     {errors.description.message}
                   </p>
                 )}
@@ -324,6 +327,7 @@ export default function EditProjectPage() {
                   {...register("companyName")}
                   placeholder="Your company or organization name"
                   disabled={isSubmitting}
+                  aria-invalid={!!errors.companyName}
                 />
               </div>
             </CardContent>
@@ -365,7 +369,7 @@ export default function EditProjectPage() {
                     )}
                   />
                   {errors.projectType && (
-                    <p className="text-sm text-destructive">
+                    <p className="text-sm text-destructive" role="alert">
                       {errors.projectType.message}
                     </p>
                   )}
@@ -399,7 +403,7 @@ export default function EditProjectPage() {
                     )}
                   />
                   {errors.difficultyLevel && (
-                    <p className="text-sm text-destructive">
+                    <p className="text-sm text-destructive" role="alert">
                       {errors.difficultyLevel.message}
                     </p>
                   )}
@@ -415,9 +419,10 @@ export default function EditProjectPage() {
                     {...register("duration")}
                     placeholder="e.g., 3 months, 6 weeks"
                     disabled={isSubmitting}
+                    aria-invalid={!!errors.duration}
                   />
                   {errors.duration && (
-                    <p className="text-sm text-destructive">
+                    <p className="text-sm text-destructive" role="alert">
                       {errors.duration.message}
                     </p>
                   )}
@@ -434,9 +439,10 @@ export default function EditProjectPage() {
                     type="date"
                     {...register("deadline")}
                     disabled={isSubmitting}
+                    aria-invalid={!!errors.deadline}
                   />
                   {errors.deadline && (
-                    <p className="text-sm text-destructive">
+                    <p className="text-sm text-destructive" role="alert">
                       {errors.deadline.message}
                     </p>
                   )}
@@ -453,9 +459,10 @@ export default function EditProjectPage() {
                     min="1"
                     max="100"
                     disabled={isSubmitting}
+                    aria-invalid={!!errors.maxApplicants}
                   />
                   {errors.maxApplicants && (
-                    <p className="text-sm text-destructive">
+                    <p className="text-sm text-destructive" role="alert">
                       {errors.maxApplicants.message}
                     </p>
                   )}
@@ -472,6 +479,7 @@ export default function EditProjectPage() {
                     min="0"
                     step="100"
                     disabled={isSubmitting}
+                    aria-invalid={!!errors.stipend}
                   />
                   <p className="text-xs text-muted-foreground">In USD</p>
                 </div>
@@ -516,6 +524,7 @@ export default function EditProjectPage() {
                   {...register("location")}
                   placeholder="e.g., San Francisco, CA or Hybrid"
                   disabled={isSubmitting}
+                  aria-invalid={!!errors.location}
                 />
               </div>
             </CardContent>

@@ -57,12 +57,14 @@ export default function Register() {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       role: "STUDENT",
     },
+    mode: "onBlur",
   });
 
   const onSubmit = async (data: RegisterFormData) => {
@@ -90,6 +92,19 @@ export default function Register() {
     }
   };
 
+  const password = watch("password");
+  const confirmPassword = watch("confirmPassword");
+
+  const passwordChecks = password
+    ? {
+        length: password.length >= 8,
+        uppercase: /[A-Z]/.test(password),
+        lowercase: /[a-z]/.test(password),
+        number: /[0-9]/.test(password),
+        special: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+      }
+    : null;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4 py-12">
       <Card className="w-full max-w-md">
@@ -110,10 +125,11 @@ export default function Register() {
                 id="fullName"
                 placeholder="John Doe"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.fullName}
                 {...register("fullName")}
               />
               {errors.fullName && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.fullName.message}
                 </p>
               )}
@@ -126,10 +142,11 @@ export default function Register() {
                 type="email"
                 placeholder="you@example.com"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.email}
                 {...register("email")}
               />
               {errors.email && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.email.message}
                 </p>
               )}
@@ -154,7 +171,7 @@ export default function Register() {
                 </SelectContent>
               </Select>
               {errors.role && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.role.message}
                 </p>
               )}
@@ -167,12 +184,67 @@ export default function Register() {
                 type="password"
                 placeholder="••••••••"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.password}
                 {...register("password")}
               />
               {errors.password && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.password.message}
                 </p>
+              )}
+              {password && passwordChecks && (
+                <div className="space-y-1 mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Password requirements:
+                  </p>
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    <div
+                      className={
+                        passwordChecks.length
+                          ? "text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {passwordChecks.length ? "✓" : "○"} At least 8 characters
+                    </div>
+                    <div
+                      className={
+                        passwordChecks.uppercase
+                          ? "text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {passwordChecks.uppercase ? "✓" : "○"} Uppercase letter
+                    </div>
+                    <div
+                      className={
+                        passwordChecks.lowercase
+                          ? "text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {passwordChecks.lowercase ? "✓" : "○"} Lowercase letter
+                    </div>
+                    <div
+                      className={
+                        passwordChecks.number
+                          ? "text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {passwordChecks.number ? "✓" : "○"} Number
+                    </div>
+                    <div
+                      className={
+                        passwordChecks.special
+                          ? "text-green-600"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      {passwordChecks.special ? "✓" : "○"} Special character
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -183,11 +255,25 @@ export default function Register() {
                 type="password"
                 placeholder="••••••••"
                 disabled={isSubmitting}
+                aria-invalid={!!errors.confirmPassword}
                 {...register("confirmPassword")}
               />
               {errors.confirmPassword && (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {errors.confirmPassword.message}
+                </p>
+              )}
+              {confirmPassword && password && (
+                <p
+                  className={`text-xs ${
+                    confirmPassword === password
+                      ? "text-green-600"
+                      : "text-destructive"
+                  }`}
+                >
+                  {confirmPassword === password
+                    ? "✓ Passwords match"
+                    : "✗ Passwords do not match"}
                 </p>
               )}
             </div>

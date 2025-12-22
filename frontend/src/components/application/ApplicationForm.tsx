@@ -48,6 +48,7 @@ export function ApplicationForm({
       coverLetter: "",
       resumeUrl: "",
     },
+    mode: "onBlur",
   });
 
   const coverLetterValue = watch("coverLetter");
@@ -96,9 +97,10 @@ export function ApplicationForm({
               placeholder="Explain your interest, relevant skills, and what you hope to learn..."
               className="w-full min-h-50 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isSubmitting}
+              aria-invalid={!!errors.coverLetter}
             />
             {errors.coverLetter && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive" role="alert">
                 {errors.coverLetter.message}
               </p>
             )}
@@ -115,10 +117,11 @@ export function ApplicationForm({
               type="url"
               {...register("resumeUrl")}
               placeholder="https://drive.google.com/..."
+              aria-invalid={!!errors.resumeUrl}
               disabled={isSubmitting}
             />
             {errors.resumeUrl && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm text-destructive" role="alert">
                 {errors.resumeUrl.message}
               </p>
             )}
