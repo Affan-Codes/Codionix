@@ -5,12 +5,15 @@ import { RouterProvider } from "react-router";
 import { router } from "./router.tsx";
 import "./index.css";
 import { Toaster } from "./components/ui/sonner.tsx";
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AuthProvider>
-      <RouterProvider router={router} />
-      <Toaster />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <RouterProvider router={router} />
+        <Toaster />
+      </AuthProvider>
+    </ErrorBoundary>
   </StrictMode>
 );
