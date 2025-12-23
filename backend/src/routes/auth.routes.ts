@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { validateBody } from '../middleware/validate.js';
 import {
+  forgotPasswordSchema,
   loginSchema,
   logoutSchema,
   refreshTokenSchema,
   registerSchema,
+  resetPasswordSchema,
 } from '../validators/auth.validator.js';
 import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
@@ -49,5 +51,27 @@ router.post('/logout', validateBody(logoutSchema), authController.logout);
  * @access  Protected
  */
 router.get('/me', authenticate, authController.getCurrentUser);
+
+/**
+ * @route   POST /api/v1/auth/forgot-password
+ * @desc    Send password reset email
+ * @access  Public
+ */
+router.post(
+  '/forgot-password',
+  validateBody(forgotPasswordSchema),
+  authController.forgotPassword
+);
+
+/**
+ * @route   POST /api/v1/auth/reset-password
+ * @desc    Reset password with token
+ * @access  Public
+ */
+router.post(
+  '/reset-password',
+  validateBody(resetPasswordSchema),
+  authController.resetPassword
+);
 
 export default router;

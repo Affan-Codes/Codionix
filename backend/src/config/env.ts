@@ -34,6 +34,20 @@ const envSchema = z.object({
 
   // Frontend
   FRONTEND_URL: z.string().default('http://localhost:5173'),
+
+  // Email (SMTP)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : 587)),
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
 });
 
 // Validate and export

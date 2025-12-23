@@ -12,7 +12,14 @@ import {
 } from '../utils/jwt.js';
 import { logger } from '../utils/logger.js';
 import { comparePassword, hashPassword } from '../utils/password.js';
-import type { LoginInput, RegisterInput } from '../validators/auth.validator.js';
+import type {
+  ForgotPasswordInput,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+} from '../validators/auth.validator.js';
+import crypto from 'crypto';
+import { sendPasswordResetEmail } from './email.service.js';
 
 // ===================================
 // TYPES
@@ -30,6 +37,17 @@ export interface AuthResponse {
   };
   tokens: TokenPair;
 }
+
+// ===================================
+// HELPER FUNCTIONS
+// ===================================
+
+/**
+ * Generate secure random token
+ */
+const generateSecureToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
 
 // ===================================
 // SERVICE FUNCTIONS
@@ -238,6 +256,89 @@ export const logout = async (token: string): Promise<void> => {
   });
 
   logger.info(`User logged out: ${storedToken.userId}`);
+};
+
+/**
+ * Forgot password - send reset email
+ */
+export const forgotPassword = async (
+  data: ForgotPasswordInput
+): Promise<{ message: string }> => {
+  const { email } = data;
+
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  // Don't reveal if email exists (security best practice)
+  if (!user) {
+    logger.warn(`Password reset requested for non-existent email: ${email}`);
+    return {
+      message: 'If an account with that email exists, a reset link was sent.',
+    };
+  }
+
+  // Generate reset token
+  const resetToken = generateSecureToken();
+  const resetExpiry = new Date();
+  resetExpiry.setHours(resetExpiry.getHours() + 1);
+
+  // Store token
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken: resetToken,
+      passwordResetExpiry: resetExpiry,
+    },
+  });
+
+  // Send email
+  await sendPasswordResetEmail(user.email, resetToken);
+
+  logger.info(`Password reset email sent: ${user.email}`);
+
+  return {
+    message: 'If an account with that email exists, a reset link was sent.',
+  };
+};
+
+/**
+ * Reset password with token
+ */
+/**
+ * Reset password with token
+ */
+export const resetPassword = async (
+  data: ResetPasswordInput
+): Promise<{ message: string }> => {
+  const { token, password } = data;
+
+  // Find user with valid token
+  const user = await prisma.user.findFirst({
+    where: {
+      passwordResetToken: token,
+      passwordResetExpiry: { gt: new Date() },
+    },
+  });
+
+  if (!user) {
+    throw new UnauthorizedError('Invalid or expired reset token');
+  }
+
+  // Hash new password
+  const passwordHash = await hashPassword(password);
+
+  // Update password and clear reset token
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash,
+      passwordResetToken: null,
+      passwordResetExpiry: null,
+    },
+  });
+
+  logger.info(`Password reset successful: ${user.email}`);
+
+  return { message: 'Password reset successful' };
 };
 
 /**

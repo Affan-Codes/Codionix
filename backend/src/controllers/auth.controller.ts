@@ -3,10 +3,12 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import * as authService from '../services/auth.service.js';
 import { ApiResponse } from '../utils/apiResponse.js';
 import type {
+  ForgotPasswordInput,
   LoginInput,
   LogoutInput,
   RefreshTokenInput,
   RegisterInput,
+  ResetPasswordInput,
 } from '../validators/auth.validator.js';
 
 /**
@@ -33,11 +35,13 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
  * Refresh access token
  * POST /api/v1/auth/refresh
  */
-export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: RefreshTokenInput = req.body;
-  const tokens = await authService.refreshAccessToken(refreshToken);
-  ApiResponse.success(res, tokens);
-});
+export const refreshToken = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { refreshToken }: RefreshTokenInput = req.body;
+    const tokens = await authService.refreshAccessToken(refreshToken);
+    ApiResponse.success(res, tokens);
+  }
+);
 
 /**
  * Logout user
@@ -65,5 +69,29 @@ export const getCurrentUser = asyncHandler(
       email: req.user.email,
       role: req.user.role,
     });
+  }
+);
+
+/**
+ * Forgot password - send reset email
+ * POST /api/v1/auth/forgot-password
+ */
+export const forgotPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const data: ForgotPasswordInput = req.body;
+    const result = await authService.forgotPassword(data);
+    ApiResponse.success(res, result);
+  }
+);
+
+/**
+ * Reset password with token
+ * POST /api/v1/auth/reset-password
+ */
+export const resetPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const data: ResetPasswordInput = req.body;
+    const result = await authService.resetPassword(data);
+    ApiResponse.success(res, result);
   }
 );

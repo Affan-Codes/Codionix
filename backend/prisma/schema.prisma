@@ -60,8 +60,13 @@ model User {
   skills            String[]
   isEmailVerified   Boolean   @default(false)
   emailVerifiedAt   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+
+  // Password reset fields
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   projects      Project[]      @relation("ProjectCreator")
@@ -73,6 +78,7 @@ model User {
 
   @@index([email])
   @@index([role])
+  @@index([passwordResetToken])
   @@map("users")
 }
 
