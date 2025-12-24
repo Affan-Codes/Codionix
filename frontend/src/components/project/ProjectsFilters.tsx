@@ -8,7 +8,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SearchIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface ProjectsFiltersProps {
   onFilterChange: (filters: FilterState) => void;
@@ -46,16 +47,29 @@ export function ProjectsFilters({
     status: "PUBLISHED", // Default to showing only published projects
   });
 
+  // Debounce search input (300ms delay)
+  const debouncedSearch = useDebounce(filters.search, 300);
+
+  // Trigger filter change when debounced search or other filters update
+  useEffect(() => {
+    onFilterChange({ ...filters, search: debouncedSearch });
+  }, [
+    debouncedSearch,
+    filters.projectType,
+    filters.difficultyLevel,
+    filters.status,
+  ]);
+
   const handleSearchChange = (value: string) => {
-    const newFilters = { ...filters, search: value };
-    setFilters(newFilters);
-    onFilterChange(newFilters);
+    // Update local state immediately (for UI responsiveness)
+    setFilters({ ...filters, search: value });
+    // API call happens after debounce via useEffect above
   };
 
+  // Immediate update for non-search filters
   const handleSelectChange = (key: keyof FilterState, value: string) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
-    onFilterChange(newFilters);
   };
 
   const handleClear = () => {
