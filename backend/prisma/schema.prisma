@@ -61,6 +61,10 @@ model User {
   isEmailVerified   Boolean   @default(false)
   emailVerifiedAt   DateTime?
 
+  // Email verification fields
+  emailVerificationToken  String?   @unique
+  emailVerificationExpiry DateTime?
+
   // Password reset fields
   passwordResetToken  String?
   passwordResetExpiry DateTime?
@@ -79,6 +83,7 @@ model User {
   @@index([email])
   @@index([role])
   @@index([passwordResetToken])
+  @@index([emailVerificationToken])
   @@map("users")
 }
 

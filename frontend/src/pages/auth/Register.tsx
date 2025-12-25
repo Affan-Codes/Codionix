@@ -39,7 +39,7 @@ const registerSchema = z
       .regex(/[A-Z]/, "Must contain uppercase letter")
       .regex(/[a-z]/, "Must contain lowercase letter")
       .regex(/[0-9]/, "Must contain number")
-      .regex(/[!@#$%^&*(),.?":{}|<>]/, "Must contain special character"),
+      .regex(/[!@#$%^&*(),.?":{}|<>_]/, "Must contain special character"),
     confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -101,7 +101,7 @@ export default function Register() {
         uppercase: /[A-Z]/.test(password),
         lowercase: /[a-z]/.test(password),
         number: /[0-9]/.test(password),
-        special: /[!@#$%^&*(),.?":{}|<>]/.test(password),
+        special: /[!@#$%^&*(),.?":{}|<>_]/.test(password),
       }
     : null;
 

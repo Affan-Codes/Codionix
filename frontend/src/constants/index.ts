@@ -6,6 +6,8 @@ export const ROUTES = {
   HOME: "/",
   LOGIN: "/login",
   REGISTER: "/register",
+  VERIFY_EMAIL: "/verify-email",
+  VERIFICATION_PENDING: "/verification-pending",
   DASHBOARD: "/dashboard",
   PROJECTS: "/projects",
   PROJECT_DETAIL: "/projects/:id",

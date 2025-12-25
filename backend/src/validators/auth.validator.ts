@@ -11,7 +11,7 @@ const passwordSchema = z
   .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(
-    /[!@#$%^&*(),.?":{}|<>]/,
+    /[!@#$%^&*(),.?":{}|<>_]/,
     'Password must contain at least one special character'
   );
 
@@ -58,6 +58,16 @@ export const resetPasswordSchema = z.object({
   password: passwordSchema,
 });
 
+// Email verification schema
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token is required'),
+});
+
+// Resend verification email schema
+export const resendVerificationSchema = z.object({
+  email: emailSchema,
+});
+
 // Export types for use in controllers
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
@@ -65,3 +75,5 @@ export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type LogoutInput = z.infer<typeof logoutSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

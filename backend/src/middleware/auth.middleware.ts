@@ -61,6 +61,45 @@ export const authenticate = async (
 };
 
 /**
+ * Require email verification
+ * CRITICAL: Use this middleware for sensitive operations
+ *
+ * @example
+ * router.post('/projects', authenticate, requireVerifiedEmail, createProject);
+ */
+export const requireVerifiedEmail = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    // Check if email is verified
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { isEmailVerified: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedError('User not found');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedError(
+        'Email verification required. Please check your email for verification link.'
+      );
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Optional authentication - doesn't fail if no token
  */
 export const optionalAuthenticate = async (

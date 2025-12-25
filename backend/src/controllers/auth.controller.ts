@@ -8,7 +8,9 @@ import type {
   LogoutInput,
   RefreshTokenInput,
   RegisterInput,
+  ResendVerificationInput,
   ResetPasswordInput,
+  VerifyEmailInput,
 } from '../validators/auth.validator.js';
 
 /**
@@ -30,6 +32,28 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.login(data);
   ApiResponse.success(res, result);
 });
+
+/**
+ * Verify email with token
+ * POST /api/v1/auth/verify-email
+ */
+export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
+  const data: VerifyEmailInput = req.body;
+  const result = await authService.verifyEmail(data);
+  ApiResponse.success(res, result);
+});
+
+/**
+ * Resend verification email
+ * POST /api/v1/auth/resend-verification
+ */
+export const resendVerification = asyncHandler(
+  async (req: Request, res: Response) => {
+    const data: ResendVerificationInput = req.body;
+    const result = await authService.resendVerificationEmail(data);
+    ApiResponse.success(res, result);
+  }
+);
 
 /**
  * Refresh access token

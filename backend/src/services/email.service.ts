@@ -155,17 +155,38 @@ export const sendEmailVerification = async (
             margin: 20px 0;
           }
           .footer { margin-top: 30px; font-size: 12px; color: #666; }
+          .warning { 
+            background-color: #fef3c7; 
+            border-left: 4px solid #f59e0b; 
+            padding: 12px; 
+            margin: 20px 0;
+          }
         </style>
       </head>
       <body>
         <div class="container">
-          <h1>Verify Your Email</h1>
-          <p>Welcome to Codionix! Please verify your email address to get started.</p>
-          <a href="${verifyUrl}" class="button">Verify Email</a>
+          <h1>Welcome to Codionix! 🎉</h1>
+          <p>Thank you for registering. Please verify your email address to unlock all features:</p>
+          
+          <ul>
+            <li>Apply to projects and internships</li>
+            <li>Create and manage your own projects</li>
+            <li>Receive application notifications</li>
+          </ul>
+
+          <a href="${verifyUrl}" class="button">Verify Email Address</a>
+          
           <p>Or copy and paste this link into your browser:</p>
-          <p style="word-break: break-all;">${verifyUrl}</p>
-          <p>This link will expire in 24 hours.</p>
+          <p style="word-break: break-all; background: #f3f4f6; padding: 10px; border-radius: 4px; font-size: 12px;">${verifyUrl}</p>
+          
+          <div class="warning">
+            <strong>⏰ This link expires in 24 hours.</strong>
+            <br>
+            If you didn't create an account, you can safely ignore this email.
+          </div>
+
           <div class="footer">
+            <p>Need help? Contact us at support@codionix.com</p>
             <p>© ${new Date().getFullYear()} Codionix. All rights reserved.</p>
           </div>
         </div>
@@ -175,7 +196,7 @@ export const sendEmailVerification = async (
 
   await sendEmail({
     to,
-    subject: 'Verify Your Email - Codionix',
+    subject: 'Welcome to Codionix - Verify Your Email',
     html,
   });
 };

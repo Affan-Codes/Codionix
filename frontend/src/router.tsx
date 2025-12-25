@@ -9,6 +9,10 @@ import { lazy, Suspense } from "react";
 const Home = lazy(() => import("@/pages/Home"));
 const Login = lazy(() => import("@/pages/auth/Login"));
 const Register = lazy(() => import("@/pages/auth/Register"));
+const VerifyEmail = lazy(() => import("@/pages/auth/VerifyEmail"));
+const VerificationPending = lazy(
+  () => import("@/pages/auth/VerificationPending")
+);
 const Dashboard = lazy(() => import("@/pages/dashboard/Dashboard"));
 const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
 const CreateProjectPage = lazy(
@@ -36,7 +40,7 @@ const PageLoader = () => (
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return <PageLoader />;
@@ -44,6 +48,11 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!isAuthenticated) {
     return <Navigate to={ROUTES.LOGIN} replace />;
+  }
+
+  // Redirect to verification pending if email not verified
+  if (user && !user.isEmailVerified) {
+    return <Navigate to={ROUTES.VERIFICATION_PENDING} replace />;
   }
 
   return <>{children}</>;
@@ -92,6 +101,22 @@ export const router = createBrowserRouter([
           <Register />
         </Suspense>
       </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: ROUTES.VERIFY_EMAIL,
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <VerifyEmail />
+      </Suspense>
+    ),
+  },
+  {
+    path: ROUTES.VERIFICATION_PENDING,
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <VerificationPending />
+      </Suspense>
     ),
   },
 

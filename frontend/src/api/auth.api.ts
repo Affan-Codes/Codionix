@@ -39,4 +39,21 @@ export const authApi = {
   logout: async (refreshToken: string): Promise<void> => {
     await apiClient.post("/auth/logout", { refreshToken });
   },
+
+  // Verify email with token
+  verifyEmail: async (token: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<ApiResponse<{ message: string }>>(
+      "/auth/verify-email",
+      { token }
+    );
+    return response.data.data!;
+  },
+
+  // Resend verification email
+  resendVerificationEmail: async (): Promise<{ message: string }> => {
+    const response = await apiClient.post<ApiResponse<{ message: string }>>(
+      "/auth/resend-verification"
+    );
+    return response.data.data!;
+  },
 };
