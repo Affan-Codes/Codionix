@@ -52,28 +52,54 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // Health check (no rate limit)
-app.get('/health', (_req, res) => {
-  res.json({
-    success: true,
+app.get('/health', async (_req, res) => {
+  const healthcheck = await db.healthCheck();
+  const poolStats = db.getPoolStats();
+
+  const status = healthcheck.healthy ? 200 : 503;
+
+  res.status(status).json({
+    success: healthcheck.healthy,
     data: {
-      status: 'ok',
-      message: 'Codionix API is running',
+      status: healthcheck.healthy ? 'ok' : 'degraded',
+      message: healthcheck.healthy
+        ? 'Codionix API is running'
+        : 'Database connection issues',
       timestamp: new Date().toISOString(),
       environment: env.NODE_ENV,
+      database: {
+        connected: healthcheck.healthy,
+        pool: {
+          total: healthcheck.pool.total,
+          idle: healthcheck.pool.idle,
+          waiting: healthcheck.pool.waiting,
+          max: healthcheck.pool.max,
+          utilization: poolStats.utilization,
+        },
+      },
     },
   });
 });
 
 // Database test
 app.get('/db-test', async (_req, res) => {
-  const isHealthy = await db.healthCheck();
+  const healthcheck = await db.healthCheck();
+  const poolStats = db.getPoolStats();
 
-  if (isHealthy) {
+  if (healthcheck.healthy) {
     res.json({
       success: true,
       data: {
         status: 'ok',
         message: 'Database connected successfully',
+        pool: {
+          total: poolStats.totalCount,
+          idle: poolStats.idleCount,
+          waiting: poolStats.waitingCount,
+          max: poolStats.maxConnections,
+          min: poolStats.minConnections,
+          utilization: poolStats.utilization,
+        },
       },
     });
   } else {
@@ -82,6 +108,12 @@ app.get('/db-test', async (_req, res) => {
       error: {
         code: 'DATABASE_ERROR',
         message: 'Database connection failed',
+        pool: {
+          total: poolStats.totalCount,
+          idle: poolStats.idleCount,
+          waiting: poolStats.waitingCount,
+          max: poolStats.maxConnections,
+        },
       },
     });
   }

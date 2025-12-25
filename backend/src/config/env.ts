@@ -12,6 +12,36 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().min(1, 'Database URL is required'),
 
+  // Database Connection Pool
+  DB_POOL_MAX: z
+    .string()
+    .default('20')
+    .transform(Number)
+    .refine((val) => val > 0 && val <= 100, {
+      message: 'DB_POOL_MAX must be between 1 and 100',
+    }),
+  DB_POOL_MIN: z
+    .string()
+    .default('2')
+    .transform(Number)
+    .refine((val) => val >= 0, {
+      message: 'DB_POOL_MIN must be >= 0',
+    }),
+  DB_IDLE_TIMEOUT_MS: z
+    .string()
+    .default('30000')
+    .transform(Number)
+    .refine((val) => val >= 1000, {
+      message: 'DB_IDLE_TIMEOUT_MS must be at least 1000ms',
+    }),
+  DB_CONNECTION_TIMEOUT_MS: z
+    .string()
+    .default('10000')
+    .transform(Number)
+    .refine((val) => val >= 1000, {
+      message: 'DB_CONNECTION_TIMEOUT_MS must be at least 1000ms',
+    }),
+
   // JWT
   JWT_ACCESS_SECRET: z
     .string()
@@ -53,7 +83,19 @@ const envSchema = z.object({
 // Validate and export
 const parseEnv = () => {
   try {
-    return envSchema.parse(process.env);
+    const parsed = envSchema.parse(process.env);
+
+    // CRITICAL VALIDATION: Ensure min <= max
+    if (parsed.DB_POOL_MIN > parsed.DB_POOL_MAX) {
+      console.error(
+        '❌ Invalid pool configuration: DB_POOL_MIN cannot exceed DB_POOL_MAX'
+      );
+      console.error(`  DB_POOL_MIN: ${parsed.DB_POOL_MIN}`);
+      console.error(`  DB_POOL_MAX: ${parsed.DB_POOL_MAX}`);
+      process.exit(1);
+    }
+
+    return parsed;
   } catch (error) {
     console.error('❌ Invalid environment variables:');
     if (error instanceof z.ZodError) {
