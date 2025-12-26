@@ -1,17 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env.js';
-import { logger } from './utils/logger.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { db } from './config/database.js';
 import routes from './routes/index.routes.js';
+import { requestCorrelation } from './middleware/requestLogger.js';
 
 const app = express();
+
+// This ensures every request has a correlation ID
+app.use(requestCorrelation);
 
 // Security middleware
 app.use(helmet());
@@ -21,6 +23,7 @@ app.use(
   cors({
     origin: env.CORS_ORIGIN,
     credentials: true,
+    exposedHeaders: ['X-Correlation-ID'], // Allow client to read correlation ID
   })
 );
 
@@ -30,15 +33,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Compression
 app.use(compression());
-
-// HTTP request logging
-app.use(
-  morgan('combined', {
-    stream: {
-      write: (message: string) => logger.info(message.trim()),
-    },
-  })
-);
 
 // Rate limiting
 const limiter = rateLimit({

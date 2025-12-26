@@ -17,13 +17,51 @@ const colors = {
 
 winston.addColors(colors);
 
-const format = winston.format.combine(
+/**
+ * Custom format for production
+ * Outputs JSON for log aggregation tools (Datadog, CloudWatch, etc.)
+ */
+const productionFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.errors({ stack: true }),
+  winston.format.json()
+);
+
+/**
+ * Custom format for development
+ * Human-readable with colors
+ */
+const developmentFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
-  winston.format.printf(
-    (info) => `${info.timestamp} [${info.level}]: ${info.message}`
-  )
+  winston.format.errors({ stack: true }),
+  winston.format.printf((info) => {
+    const { timestamp, level, message, correlationId, errorId, ...meta } = info;
+
+    // Build base message
+    let log = `${timestamp} [${level}]: ${message}`;
+
+    // Add correlation ID if present
+    if (correlationId) {
+      log += ` [CID: ${correlationId}]`;
+    }
+
+    // Add error ID if present
+    if (errorId) {
+      log += ` [EID: ${errorId}]`;
+    }
+
+    // Add metadata if present
+    if (Object.keys(meta).length > 0) {
+      log += `\n${JSON.stringify(meta, null, 2)}`;
+    }
+
+    return log;
+  })
 );
+
+const format =
+  env.NODE_ENV === 'production' ? productionFormat : developmentFormat;
 
 const transports = [
   new winston.transports.Console(),
@@ -50,3 +88,17 @@ try {
 } catch (error) {
   // Directory already exists
 }
+
+/**
+ * Helper to add correlation context to logs
+ * Use in services: logger.info('User created', withContext(req, { userId }))
+ */
+export const withContext = (req: any, meta: object = {}) => {
+  return {
+    correlationId: req?.correlationId,
+    userId: req?.user?.userId,
+    path: req?.path,
+    method: req?.method,
+    ...meta,
+  };
+};
