@@ -23,24 +23,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const loadUser = async () => {
-      const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
       const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
 
-      if (storedUser && token) {
-        try {
-          // Verify token is still valid by fetching current user
-          const currentUser = await userApi.getCurrentUser();
-          setUser(currentUser);
-          localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
-        } catch (error) {
-          // Token invalid, clear storage
-          localStorage.removeItem(STORAGE_KEYS.USER);
-          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-          setUser(null);
-        }
+      // CRITICAL: No token = no auth. Don't trust localStorage user alone.
+      if (!token) {
+        setUser(null);
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      try {
+        // ALWAYS fetch fresh user from API to verify token + email status
+        const currentUser = await userApi.getCurrentUser();
+        setUser(currentUser);
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
+      } catch (error) {
+        // Token invalid/expired - clear everything
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     loadUser();

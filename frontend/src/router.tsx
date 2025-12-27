@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { useAuth } from "./context/AuthContext";
 import { ROUTES } from "./constants";
 import { RoleGuard } from "./components/guards/RoleGuard";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { LoadingSpinner } from "./components/common/LoadingSpinner";
 
 // Lazy load pages for better performance
 import { lazy, Suspense } from "react";
@@ -31,11 +33,19 @@ const ProjectApplicantsPage = lazy(
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const Unauthorized = lazy(() => import("@/pages/Unauthorized"));
 
-// Loading component
-const PageLoader = () => (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="text-lg">Loading...</div>
-  </div>
+/**
+ * Production-grade route wrapper
+ *
+ * Wraps EVERY lazy-loaded component with:
+ * 1. ErrorBoundary - catches chunk load failures
+ * 2. Suspense - shows loading state during code splitting
+ *
+ * CRITICAL: Without this, failed chunk loads white-screen the app
+ */
+const LazyRoute = ({ children }: { children: React.ReactNode }) => (
+  <ErrorBoundary>
+    <Suspense fallback={<LoadingSpinner />}>{children}</Suspense>
+  </ErrorBoundary>
 );
 
 // Protected Route Component
@@ -43,7 +53,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
-    return <PageLoader />;
+    return <LoadingSpinner message="Verifying authentication..." />;
   }
 
   if (!isAuthenticated) {
@@ -63,7 +73,7 @@ const PublicOnlyRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return <PageLoader />;
+    return <LoadingSpinner message="Checking session..." />;
   }
 
   if (isAuthenticated) {
@@ -78,18 +88,18 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.HOME,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <Home />
-      </Suspense>
+      </LazyRoute>
     ),
   },
   {
     path: ROUTES.LOGIN,
     element: (
       <PublicOnlyRoute>
-        <Suspense fallback={<PageLoader />}>
+        <LazyRoute>
           <Login />
-        </Suspense>
+        </LazyRoute>
       </PublicOnlyRoute>
     ),
   },
@@ -97,26 +107,26 @@ export const router = createBrowserRouter([
     path: ROUTES.REGISTER,
     element: (
       <PublicOnlyRoute>
-        <Suspense fallback={<PageLoader />}>
+        <LazyRoute>
           <Register />
-        </Suspense>
+        </LazyRoute>
       </PublicOnlyRoute>
     ),
   },
   {
     path: ROUTES.VERIFY_EMAIL,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <VerifyEmail />
-      </Suspense>
+      </LazyRoute>
     ),
   },
   {
     path: ROUTES.VERIFICATION_PENDING,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <VerificationPending />
-      </Suspense>
+      </LazyRoute>
     ),
   },
 
@@ -125,9 +135,9 @@ export const router = createBrowserRouter([
     path: ROUTES.DASHBOARD,
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
+        <LazyRoute>
           <Dashboard />
-        </Suspense>
+        </LazyRoute>
       </ProtectedRoute>
     ),
   },
@@ -135,9 +145,9 @@ export const router = createBrowserRouter([
     path: ROUTES.PROFILE,
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
+        <LazyRoute>
           <ProfilePage />
-        </Suspense>
+        </LazyRoute>
       </ProtectedRoute>
     ),
   },
@@ -146,17 +156,17 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.PROJECTS,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <ProjectsPage />
-      </Suspense>
+      </LazyRoute>
     ),
   },
   {
     path: ROUTES.PROJECT_DETAIL,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <ProjectDetailPage />
-      </Suspense>
+      </LazyRoute>
     ),
   },
 
@@ -166,9 +176,9 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["STUDENT"]}>
-          <Suspense fallback={<PageLoader />}>
+          <LazyRoute>
             <MyApplications />
-          </Suspense>
+          </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>
     ),
@@ -180,9 +190,9 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
-          <Suspense fallback={<PageLoader />}>
+          <LazyRoute>
             <CreateProjectPage />
-          </Suspense>
+          </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>
     ),
@@ -192,9 +202,9 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
-          <Suspense fallback={<PageLoader />}>
+          <LazyRoute>
             <EditProjectPage />
-          </Suspense>
+          </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>
     ),
@@ -204,9 +214,9 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
-          <Suspense fallback={<PageLoader />}>
+          <LazyRoute>
             <ProjectApplicantsPage />
-          </Suspense>
+          </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>
     ),
@@ -216,9 +226,9 @@ export const router = createBrowserRouter([
   {
     path: ROUTES.UNAUTHORIZED,
     element: (
-      <Suspense fallback={<PageLoader />}>
+      <LazyRoute>
         <Unauthorized />
-      </Suspense>
+      </LazyRoute>
     ),
   },
 
