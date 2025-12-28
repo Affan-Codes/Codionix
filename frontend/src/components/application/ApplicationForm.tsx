@@ -14,6 +14,7 @@ import { Loader2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 
 interface ApplicationFormProps {
   projectId: string;
@@ -37,11 +38,14 @@ export function ApplicationForm({
   projectTitle,
   onSuccess,
 }: ApplicationFormProps) {
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<ApplicationFormData>({
     resolver: zodResolver(applicationSchema),
     defaultValues: {
@@ -54,7 +58,7 @@ export function ApplicationForm({
   const coverLetterValue = watch("coverLetter");
 
   const onSubmit = async (data: ApplicationFormData) => {
-    try {
+    await handleApiSubmit(async () => {
       await applicationApi.createApplication({
         projectId,
         coverLetter: data.coverLetter,
@@ -66,14 +70,10 @@ export function ApplicationForm({
       });
 
       onSuccess();
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message || "Failed to submit application";
-      toast.error("Application failed", {
-        description: errorMessage,
-      });
-    }
+    });
   };
+
+  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <Card>
@@ -96,7 +96,7 @@ export function ApplicationForm({
               {...register("coverLetter")}
               placeholder="Explain your interest, relevant skills, and what you hope to learn..."
               className="w-full min-h-50 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSubmitting}
+              disabled={isLoading}
               aria-invalid={!!errors.coverLetter}
             />
             {errors.coverLetter && (
@@ -118,7 +118,7 @@ export function ApplicationForm({
               {...register("resumeUrl")}
               placeholder="https://drive.google.com/..."
               aria-invalid={!!errors.resumeUrl}
-              disabled={isSubmitting}
+              disabled={isLoading}
             />
             {errors.resumeUrl && (
               <p className="text-sm text-destructive" role="alert">
@@ -131,8 +131,8 @@ export function ApplicationForm({
           </div>
 
           {/* Submit Button */}
-          <Button type="submit" disabled={isSubmitting} className="w-full">
-            {isSubmitting ? (
+          <Button type="submit" disabled={isLoading} className="w-full">
+            {isLoading ? (
               <>
                 <Loader2Icon className="h-4 w-4 animate-spin" />
                 Submitting...

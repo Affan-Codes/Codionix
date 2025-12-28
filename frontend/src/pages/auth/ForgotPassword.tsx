@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROUTES } from "@/constants";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeftIcon, CheckCircleIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
@@ -28,30 +29,32 @@ export default function ForgotPassword() {
   const [emailSent, setEmailSent] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
 
+  // Prevent duplicate submissions
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<ForgotPasswordFormData>({
     resolver: zodResolver(forgotPasswordSchema),
     mode: "onBlur",
   });
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
-    try {
+    await handleApiSubmit(async () => {
       await authApi.forgotPassword(data.email);
       setSubmittedEmail(data.email);
       setEmailSent(true);
       toast.success("Reset email sent!", {
         description: "Check your inbox for the password reset link.",
       });
-    } catch (error: any) {
-      // Don't reveal if email exists (security best practice)
-      // Backend always returns success message
-      setSubmittedEmail(data.email);
-      setEmailSent(true);
-    }
+    });
   };
+
+  // Combined loading state (validation OR API call)
+  const isLoading = isValidating || isApiSubmitting;
 
   if (emailSent) {
     return (
@@ -139,7 +142,7 @@ export default function ForgotPassword() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.email}
                 {...register("email")}
               />
@@ -150,8 +153,8 @@ export default function ForgotPassword() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? (
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
                 <>
                   <Loader2Icon className="size-4 animate-spin" /> Sending...
                 </>

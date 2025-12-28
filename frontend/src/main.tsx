@@ -6,11 +6,13 @@ import { router } from "./router.tsx";
 import "./index.css";
 import { Toaster } from "./components/ui/sonner.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
+import { NetworkStatus } from "./components/NetworkStatus.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
+        <NetworkStatus />
         <RouterProvider router={router} />
         <Toaster />
       </AuthProvider>

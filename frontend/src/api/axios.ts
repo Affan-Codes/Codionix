@@ -7,12 +7,14 @@ import axios, { type InternalAxiosRequestConfig } from "axios";
 
 /**
  * Extend Axios config to support custom metadata
- * Used for tracking request deduplication keys
+ * Used for tracking request deduplication keys and retry counts
  */
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   metadata?: {
     requestKey: string;
   };
+  _retry?: boolean;
+  _retryCount?: number;
 }
 
 // ===================================
@@ -280,13 +282,78 @@ apiClient.interceptors.response.use(
       return error.originalPromise;
     }
 
-    const originalRequest = error.config as CustomAxiosRequestConfig & {
-      _retry?: boolean;
-    };
+    const originalRequest = error.config as CustomAxiosRequestConfig;
 
     // Clean up pending request on error
     if (originalRequest?.metadata?.requestKey) {
       pendingRequests.delete(originalRequest.metadata.requestKey);
+    }
+
+    // ===================================
+    // NETWORK ERROR HANDLING
+    // ===================================
+
+    /**
+     * Handle network errors (client offline, DNS failure, etc.)
+     *
+     * CRITICAL: Don't retry immediately - user might still be offline
+     * Instead, reject with user-friendly error message
+     */
+    if (!error.response && error.code === "ERR_NETWORK") {
+      return Promise.reject({
+        ...error,
+        userMessage:
+          "Network error. Check your internet connection and try again.",
+        isNetworkError: true,
+      });
+    }
+
+    /**
+     * Handle server errors (500, 502, 503, 504)
+     *
+     * Strategy: Retry once after 1 second for transient failures
+     * Common causes: Server restart, deployment, database connection spike
+     */
+    const isServerError =
+      error.response?.status >= 500 && error.response?.status < 600;
+    const isRetryableMethod = ["GET", "HEAD", "OPTIONS"].includes(
+      originalRequest?.method?.toUpperCase() || ""
+    );
+
+    if (isServerError && isRetryableMethod && !originalRequest._retry) {
+      originalRequest._retry = true;
+      originalRequest._retryCount = (originalRequest._retryCount || 0) + 1;
+
+      // Only retry once to avoid infinite loops
+      if (originalRequest._retryCount <= 1) {
+        // Wait 1 second before retry (gives server time to recover)
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        return apiClient(originalRequest);
+      }
+
+      // Max retries exceeded - give up with user-friendly message
+      return Promise.reject({
+        ...error,
+        userMessage:
+          "Server is temporarily unavailable. Please try again in a moment.",
+        isServerError: true,
+      });
+    }
+
+    /**
+     * Handle timeout errors (request took too long)
+     *
+     * Don't retry - if it timed out once, it'll likely timeout again
+     * User might be on slow connection or server is overloaded
+     */
+    if (error.code === "ECONNABORTED" || error.code === "ERR_TIMEOUT") {
+      return Promise.reject({
+        ...error,
+        userMessage:
+          "Request timed out. Check your connection or try again later.",
+        isTimeout: true,
+      });
     }
 
     // If 401 and not already retried, try refresh token

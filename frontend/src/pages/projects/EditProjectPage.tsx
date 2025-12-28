@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 import type { Project } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, TrashIcon, XIcon } from "lucide-react";
@@ -61,17 +62,22 @@ export default function EditProjectPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
+
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
+  const { isSubmitting: isDeleting, handleSubmit: handleDelete } =
+    useFormSubmission();
 
   const {
     register,
     handleSubmit,
     control,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<EditProjectFormData>({
     resolver: zodResolver(editProjectSchema),
     mode: "onBlur",
@@ -85,7 +91,7 @@ export default function EditProjectPage() {
     }
 
     const fetchProject = async () => {
-      setIsLoading(true);
+      setIsInitialLoading(true);
       try {
         const data = await projectApi.getProjectById(id);
         setProject(data);
@@ -118,7 +124,7 @@ export default function EditProjectPage() {
         });
         navigate(ROUTES.PROJECTS);
       } finally {
-        setIsLoading(false);
+        setIsInitialLoading(false);
       }
     };
 
@@ -150,15 +156,14 @@ export default function EditProjectPage() {
   };
 
   const onSubmit = async (data: EditProjectFormData) => {
+    if (!id) return;
+
     if (skills.length === 0) {
       toast.error("Please add at least one skill");
       return;
     }
 
-    if (!id) return;
-
-    try {
-      // Transform string values to numbers for API
+    await handleApiSubmit(async () => {
       const projectData = {
         title: data.title,
         description: data.description,
@@ -190,17 +195,11 @@ export default function EditProjectPage() {
       });
 
       navigate(`/projects/${id}`);
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message || "Failed to update project";
-      toast.error("Update failed", {
-        description: errorMessage,
-      });
-    }
+    });
   };
 
   // Handle project deletion
-  const handleDelete = async () => {
+  const handleDeleteProject = async () => {
     if (!id) return;
 
     const confirmed = window.confirm(
@@ -209,23 +208,16 @@ export default function EditProjectPage() {
 
     if (!confirmed) return;
 
-    setIsDeleting(true);
-    try {
+    await handleDelete(async () => {
       await projectApi.deleteProject(id);
       toast.success("Project deleted successfully");
       navigate(ROUTES.PROJECTS);
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message || "Failed to delete project";
-      toast.error("Deletion failed", {
-        description: errorMessage,
-      });
-    } finally {
-      setIsDeleting(false);
-    }
+    });
   };
 
-  if (isLoading) {
+  const isLoading = isApiSubmitting || isDeleting || isValidating;
+
+  if (isInitialLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center py-12">
@@ -252,8 +244,8 @@ export default function EditProjectPage() {
           </div>
           <Button
             variant="destructive"
-            onClick={handleDelete}
-            disabled={isDeleting || isSubmitting}
+            onClick={handleDeleteProject}
+            disabled={isLoading}
           >
             {isDeleting ? (
               <>
@@ -289,7 +281,7 @@ export default function EditProjectPage() {
                   id="title"
                   {...register("title")}
                   placeholder="e.g., Build a React Dashboard for Analytics"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.title}
                 />
                 {errors.title && (
@@ -309,7 +301,7 @@ export default function EditProjectPage() {
                   {...register("description")}
                   placeholder="Describe the project goals, what students will learn, and any specific requirements..."
                   className="w-full min-h-37.5 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.description}
                 />
                 {errors.description && (
@@ -326,7 +318,7 @@ export default function EditProjectPage() {
                   id="companyName"
                   {...register("companyName")}
                   placeholder="Your company or organization name"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.companyName}
                 />
               </div>
@@ -356,7 +348,7 @@ export default function EditProjectPage() {
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
@@ -387,7 +379,7 @@ export default function EditProjectPage() {
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select difficulty" />
@@ -418,7 +410,7 @@ export default function EditProjectPage() {
                     id="duration"
                     {...register("duration")}
                     placeholder="e.g., 3 months, 6 weeks"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.duration}
                   />
                   {errors.duration && (
@@ -438,7 +430,7 @@ export default function EditProjectPage() {
                     id="deadline"
                     type="date"
                     {...register("deadline")}
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.deadline}
                   />
                   {errors.deadline && (
@@ -458,7 +450,7 @@ export default function EditProjectPage() {
                     placeholder="10"
                     min="1"
                     max="100"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.maxApplicants}
                   />
                   {errors.maxApplicants && (
@@ -478,7 +470,7 @@ export default function EditProjectPage() {
                     placeholder="e.g., 5000"
                     min="0"
                     step="100"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.stipend}
                   />
                   <p className="text-xs text-muted-foreground">In USD</p>
@@ -506,7 +498,7 @@ export default function EditProjectPage() {
                       id="isRemote"
                       checked={field.value}
                       onChange={field.onChange}
-                      disabled={isSubmitting}
+                      disabled={isLoading}
                       className="h-4 w-4 rounded border-gray-300"
                     />
                   )}
@@ -523,7 +515,7 @@ export default function EditProjectPage() {
                   id="location"
                   {...register("location")}
                   placeholder="e.g., San Francisco, CA or Hybrid"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.location}
                 />
               </div>
@@ -551,12 +543,12 @@ export default function EditProjectPage() {
                     }
                   }}
                   placeholder="e.g., React, Node.js, TypeScript"
-                  disabled={isSubmitting || skills.length >= 10}
+                  disabled={isLoading || skills.length >= 10}
                 />
                 <Button
                   type="button"
                   onClick={handleAddSkill}
-                  disabled={isSubmitting || skills.length >= 10}
+                  disabled={isLoading || skills.length >= 10}
                   variant="outline"
                 >
                   <PlusIcon className="h-4 w-4" />
@@ -576,7 +568,7 @@ export default function EditProjectPage() {
                       <button
                         type="button"
                         onClick={() => handleRemoveSkill(skill)}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                         className="hover:text-blue-900"
                       >
                         <XIcon className="h-3 w-3" />
@@ -608,7 +600,7 @@ export default function EditProjectPage() {
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select status" />
@@ -636,12 +628,12 @@ export default function EditProjectPage() {
               type="button"
               variant="outline"
               onClick={() => navigate(`/projects/${id}`)}
-              disabled={isSubmitting}
+              disabled={isLoading}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="flex-1">
-              {isSubmitting ? (
+            <Button type="submit" disabled={isLoading} className="flex-1">
+              {isLoading ? (
                 <>
                   <Loader2Icon className="h-4 w-4 animate-spin" />
                   Updating...

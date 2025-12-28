@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 
 const loginSchema = z.object({
   email: z.email("Invalid email address").min(1, "Email is required"),
@@ -27,34 +28,29 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     mode: "onBlur",
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    try {
+    await handleApiSubmit(async () => {
       await login(data);
       toast.success("Welcome back!", {
         description: "You have successfully signed in.",
       });
       navigate(ROUTES.DASHBOARD);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        toast.error("Login failed", {
-          description: err.message || "Invalid email or password",
-        });
-      } else {
-        toast.error("Login failed", {
-          description: "An unexpected error occurred",
-        });
-      }
-    }
+    });
   };
+
+  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">
@@ -76,7 +72,7 @@ export default function Login() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.email}
                 {...register("email")}
               />
@@ -101,7 +97,7 @@ export default function Login() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.password}
                 {...register("password")}
               />
@@ -112,8 +108,8 @@ export default function Login() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Signing in..." : "Sign In"}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 

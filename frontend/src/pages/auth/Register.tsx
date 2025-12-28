@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ROUTES, USER_ROLES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router";
@@ -53,12 +54,15 @@ export default function Register() {
   const { register: registerUser } = useAuth();
   const navigate = useNavigate();
 
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -68,28 +72,16 @@ export default function Register() {
   });
 
   const onSubmit = async (data: RegisterFormData) => {
-    try {
+    await handleApiSubmit(async () => {
       await registerUser({
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         role: data.role,
       });
-      toast.success("Account created!", {
-        description: "Welcome to Codionix. Let's get started!",
-      });
+      toast.success("Account created!");
       navigate(ROUTES.DASHBOARD);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        toast.error("Registration failed", {
-          description: err.message || "Could not create account",
-        });
-      } else {
-        toast.error("Registration failed", {
-          description: "An unexpected error occurred",
-        });
-      }
-    }
+    });
   };
 
   const password = watch("password");
@@ -104,6 +96,9 @@ export default function Register() {
         special: /[!@#$%^&*(),.?":{}|<>_]/.test(password),
       }
     : null;
+
+  // Combine loading states
+  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4 py-12">
@@ -124,7 +119,7 @@ export default function Register() {
               <Input
                 id="fullName"
                 placeholder="John Doe"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.fullName}
                 {...register("fullName")}
               />
@@ -141,7 +136,7 @@ export default function Register() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.email}
                 {...register("email")}
               />
@@ -159,7 +154,7 @@ export default function Register() {
                 onValueChange={(value) =>
                   setValue("role", value as "STUDENT" | "MENTOR" | "EMPLOYER")
                 }
-                disabled={isSubmitting}
+                disabled={isLoading}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select your role" />
@@ -183,7 +178,7 @@ export default function Register() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.password}
                 {...register("password")}
               />
@@ -254,7 +249,7 @@ export default function Register() {
                 id="confirmPassword"
                 type="password"
                 placeholder="••••••••"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.confirmPassword}
                 {...register("confirmPassword")}
               />
@@ -278,8 +273,8 @@ export default function Register() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Creating account..." : "Create Account"}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Creating account..." : "Create Account"}
             </Button>
           </form>
 

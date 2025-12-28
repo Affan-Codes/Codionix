@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROUTES } from "@/constants";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import { useState } from "react";
@@ -44,11 +45,14 @@ export default function ResetPassword() {
 
   const token = searchParams.get("token");
 
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<ResetPasswordFormData>({
     resolver: zodResolver(resetPasswordSchema),
     mode: "onBlur",
@@ -73,31 +77,29 @@ export default function ResetPassword() {
       return;
     }
 
-    try {
-      await authApi.resetPassword(token, data.password);
-      setResetSuccess(true);
-      toast.success("Password reset successful!", {
-        description: "You can now log in with your new password.",
-      });
+    await handleApiSubmit(async () => {
+      try {
+        await authApi.resetPassword(token, data.password);
+        setResetSuccess(true);
+        toast.success("Password reset successful!", {
+          description: "You can now log in with your new password.",
+        });
 
-      // Redirect to login after 2 seconds
-      setTimeout(() => {
-        navigate(ROUTES.LOGIN);
-      }, 2000);
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message ||
-        "Failed to reset password. The link may be invalid or expired.";
-      toast.error("Reset failed", {
-        description: errorMessage,
-      });
-
-      // If token is invalid/expired, show error state
-      if (error.response?.status === 401) {
-        setInvalidToken(true);
+        // Redirect to login after 2 seconds
+        setTimeout(() => {
+          navigate(ROUTES.LOGIN);
+        }, 2000);
+      } catch (error: any) {
+        // If token is invalid/expired, show error state
+        if (error.response?.status === 401) {
+          setInvalidToken(true);
+        }
+        throw error; // Re-throw for useFormSubmission to handle
       }
-    }
+    });
   };
+
+  const isLoading = isValidating || isApiSubmitting;
 
   // Invalid/Missing Token State
   if (!token || invalidToken) {
@@ -181,7 +183,7 @@ export default function ResetPassword() {
                 id="password"
                 type="password"
                 placeholder="••••••••"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.password}
                 {...register("password")}
               />
@@ -252,7 +254,7 @@ export default function ResetPassword() {
                 id="confirmPassword"
                 type="password"
                 placeholder="••••••••"
-                disabled={isSubmitting}
+                disabled={isLoading}
                 aria-invalid={!!errors.confirmPassword}
                 {...register("confirmPassword")}
               />
@@ -276,8 +278,8 @@ export default function ResetPassword() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? (
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
                 <>
                   <Loader2Icon className="h-4 w-4 animate-spin" />
                   Resetting...

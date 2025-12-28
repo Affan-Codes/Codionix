@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -61,11 +62,14 @@ export default function CreateProjectPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
 
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<CreateProjectFormData>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: {
@@ -109,8 +113,7 @@ export default function CreateProjectPage() {
       return;
     }
 
-    try {
-      // Transform string values to numbers for API
+    await handleApiSubmit(async () => {
       const projectData = {
         title: data.title,
         description: data.description,
@@ -144,14 +147,10 @@ export default function CreateProjectPage() {
       });
 
       navigate(`/projects/${project.id}`);
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message || "Failed to create project";
-      toast.error("Creation failed", {
-        description: errorMessage,
-      });
-    }
+    });
   };
+
+  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <Layout maxWidth="5xl">
@@ -186,7 +185,7 @@ export default function CreateProjectPage() {
                   id="title"
                   {...register("title")}
                   placeholder="e.g., Build a React Dashboard for Analytics"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.title}
                 />
                 {errors.title && (
@@ -206,7 +205,7 @@ export default function CreateProjectPage() {
                   {...register("description")}
                   placeholder="Describe the project goals, what students will learn, and any specific requirements..."
                   className="w-full min-h-37.5 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.description}
                 />
                 {errors.description && (
@@ -223,7 +222,7 @@ export default function CreateProjectPage() {
                   id="companyName"
                   {...register("companyName")}
                   placeholder="Your company or organization name"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.companyName}
                 />
               </div>
@@ -254,7 +253,7 @@ export default function CreateProjectPage() {
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
@@ -285,7 +284,7 @@ export default function CreateProjectPage() {
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select difficulty" />
@@ -316,7 +315,7 @@ export default function CreateProjectPage() {
                     id="duration"
                     {...register("duration")}
                     placeholder="e.g., 3 months, 6 weeks"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.duration}
                   />
                   {errors.duration && (
@@ -336,7 +335,7 @@ export default function CreateProjectPage() {
                     id="deadline"
                     type="date"
                     {...register("deadline")}
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.deadline}
                   />
                   {errors.deadline && (
@@ -356,7 +355,7 @@ export default function CreateProjectPage() {
                     placeholder="10"
                     min="1"
                     max="100"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.maxApplicants}
                   />
                   {errors.maxApplicants && (
@@ -376,7 +375,7 @@ export default function CreateProjectPage() {
                     placeholder="e.g., 5000"
                     min="0"
                     step="100"
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                     aria-invalid={!!errors.stipend}
                   />
                   <p className="text-xs text-muted-foreground">In USD</p>
@@ -404,7 +403,7 @@ export default function CreateProjectPage() {
                       id="isRemote"
                       checked={field.value}
                       onChange={field.onChange}
-                      disabled={isSubmitting}
+                      disabled={isLoading}
                       className="h-4 w-4 rounded border-gray-300"
                     />
                   )}
@@ -421,7 +420,7 @@ export default function CreateProjectPage() {
                   id="location"
                   {...register("location")}
                   placeholder="e.g., San Francisco, CA or Hybrid"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                   aria-invalid={!!errors.location}
                 />
               </div>
@@ -450,12 +449,12 @@ export default function CreateProjectPage() {
                     }
                   }}
                   placeholder="e.g., React, Node.js, TypeScript"
-                  disabled={isSubmitting || skills.length >= 10}
+                  disabled={isLoading || skills.length >= 10}
                 />
                 <Button
                   type="button"
                   onClick={handleAddSkill}
-                  disabled={isSubmitting || skills.length >= 10}
+                  disabled={isLoading || skills.length >= 10}
                   variant="outline"
                 >
                   <PlusIcon className="h-4 w-4" />
@@ -475,7 +474,7 @@ export default function CreateProjectPage() {
                       <button
                         type="button"
                         onClick={() => handleRemoveSkill(skill)}
-                        disabled={isSubmitting}
+                        disabled={isLoading}
                         className="hover:text-blue-900"
                       >
                         <XIcon className="h-3 w-3" />
@@ -510,7 +509,7 @@ export default function CreateProjectPage() {
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select status" />
@@ -535,12 +534,12 @@ export default function CreateProjectPage() {
               type="button"
               variant="outline"
               onClick={() => navigate(ROUTES.PROJECTS)}
-              disabled={isSubmitting}
+              disabled={isLoading}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="flex-1">
-              {isSubmitting ? (
+            <Button type="submit" disabled={isLoading} className="flex-1">
+              {isLoading ? (
                 <>
                   <Loader2Icon className="h-4 w-4 animate-spin" />
                   Creating...

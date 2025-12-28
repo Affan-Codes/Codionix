@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
+import { useFormSubmission } from "@/hooks/useFormSubmission";
 
 interface ReviewApplicationDialogProps {
   application: Application | null;
@@ -58,13 +59,16 @@ export function ReviewApplicationDialog({
   onOpenChange,
   onSuccess,
 }: ReviewApplicationDialogProps) {
+  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
+    useFormSubmission();
+
   const {
     register,
     handleSubmit,
     control,
     watch,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting: isValidating },
   } = useForm<ReviewFormData>({
     resolver: zodResolver(reviewSchema),
     defaultValues: {
@@ -78,7 +82,7 @@ export function ReviewApplicationDialog({
   const onSubmit = async (data: ReviewFormData) => {
     if (!application) return;
 
-    try {
+    await handleApiSubmit(async () => {
       await applicationApi.updateApplicationStatus(
         application.id,
         data.status,
@@ -94,19 +98,15 @@ export function ReviewApplicationDialog({
       reset();
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message || "Failed to update application";
-      toast.error("Review failed", {
-        description: errorMessage,
-      });
-    }
+    });
   };
 
   const handleClose = () => {
     reset();
     onOpenChange(false);
   };
+
+  const isLoading = isValidating || isApiSubmitting;
 
   if (!application) return null;
 
@@ -202,7 +202,7 @@ export function ReviewApplicationDialog({
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
-                    disabled={isSubmitting}
+                    disabled={isLoading}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select decision" />
@@ -248,7 +248,7 @@ export function ReviewApplicationDialog({
                   {...register("rejectionReason")}
                   placeholder="Provide constructive feedback on why the application was rejected..."
                   className="w-full min-h-25 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isSubmitting}
+                  disabled={isLoading}
                 />
                 {errors.rejectionReason && (
                   <p className="text-sm text-destructive">
@@ -267,13 +267,13 @@ export function ReviewApplicationDialog({
                 type="button"
                 variant="outline"
                 onClick={handleClose}
-                disabled={isSubmitting}
+                disabled={isLoading}
                 className="flex-1"
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting} className="flex-1">
-                {isSubmitting ? (
+              <Button type="submit" disabled={isLoading} className="flex-1">
+                {isLoading ? (
                   <>
                     <Loader2Icon className="h-4 w-4 animate-spin" />
                     Submitting...
