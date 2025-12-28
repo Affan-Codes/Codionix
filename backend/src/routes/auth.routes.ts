@@ -21,13 +21,23 @@ const router = Router();
 // ===================================
 
 /**
- * Aggressive rate limiting for verification endpoints
+ * Strict rate limiting for email verification endpoints
  * CRITICAL: Prevents email spam and token brute force
+ *
+ * Limit: 3 attempts per 15 minutes
+ * Reason: Verification emails are expensive (SMTP cost + abuse risk)
  */
 const verificationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 3, // 3 attempts per 15 minutes
-  message: 'Too many verification attempts, please try again later',
+  limit: 3,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message:
+        'Too many verification attempts. Please try again in 15 minutes.',
+    },
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -37,8 +47,15 @@ const verificationLimiter = rateLimit({
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per 15 minutes
-  message: 'Too many attempts, please try again later',
+  max: 10, // 10 attempts per 15 minutes
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message:
+        'Too many authentication attempts. Please try again in 15 minutes.',
+    },
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });

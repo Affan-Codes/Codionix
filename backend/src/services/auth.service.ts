@@ -82,66 +82,70 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
   const verificationExpiry = new Date();
   verificationExpiry.setHours(verificationExpiry.getHours() + 24); // 24 hours
 
-  // Create user with verification token
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      fullName,
-      role,
-      skills: [],
-      isEmailVerified: false,
-      emailVerificationToken: verificationToken,
-      emailVerificationExpiry: verificationExpiry,
-    },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      isEmailVerified: true,
-      profilePictureUrl: true,
-      createdAt: true,
-    },
-  });
-
-  // Send verification email
-  try {
-    await sendEmailVerification(user.email, verificationToken);
-    logger.info(`Verification email sent to: ${user.email}`);
-  } catch (error) {
-    // Log error but don't block registration
-    logger.error('Failed to send verification email:', error);
-    // In production, you might want to queue this for retry
-  }
-
-  // Generate tokens
+  // Generate tokens BEFORE transaction
   const tokenPayload: JwtPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
+    userId: '', // Will be filled after user creation
+    email,
+    role,
   };
 
-  const tokens = generateTokenPair(tokenPayload);
+  // Atomic transaction for user + refresh token
+  const result = await prisma.$transaction(async (tx) => {
+    // Create User
+    const user = await tx.user.create({
+      data: {
+        email,
+        passwordHash,
+        fullName,
+        role,
+        skills: [],
+        isEmailVerified: false,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpiry: verificationExpiry,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        isEmailVerified: true,
+        profilePictureUrl: true,
+        createdAt: true,
+      },
+    });
 
-  // Store refresh token
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
+    // Update token payload with real user ID
+    tokenPayload.userId = user.id;
 
-  await prisma.refreshToken.create({
-    data: {
-      userId: user.id,
-      token: tokens.refreshToken,
-      expiresAt,
-    },
+    // Generate token pair
+    const tokens = generateTokenPair(tokenPayload);
+
+    // Store refresh token in same transaction
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await tx.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: tokens.refreshToken,
+        expiresAt,
+      },
+    });
+
+    return { user, tokens };
   });
 
-  logger.info(`User registered: ${user.email}`);
+  // Send email AFTER transaction, non-blocking
+  // If email fails, user still has working account
+  // User can click "resend verification" later
+  sendEmailVerification(result.user.email, verificationToken);
 
-  return {
-    user,
-    tokens,
-  };
+  logger.info(`User registered: ${result.user.email}`, {
+    userId: result.user.id,
+    role: result.user.role,
+  });
+
+  return result;
 };
 
 /**
@@ -286,14 +290,12 @@ export const resendVerificationEmail = async (
     },
   });
 
-  // Send verification email
-  try {
-    await sendEmailVerification(user.email, verificationToken);
-    logger.info(`Verification email resent to: ${user.email}`);
-  } catch (error) {
-    logger.error('Failed to resend verification email:', error);
-    throw new Error('Failed to send verification email');
-  }
+  //  Non-blocking email send
+  sendEmailVerification(user.email, verificationToken);
+
+  logger.info(`Verification email resent: ${user.email}`, {
+    userId: user.id,
+  });
 
   return {
     message: 'If an account exists, a verification email has been sent',
@@ -354,7 +356,7 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
     }),
   ]);
 
-  logger.info(`Token refreshed: ${user.email}`);
+  logger.info(`Token refreshed: ${user.email}`, { userId: user.id });
 
   return newTokens;
 };
@@ -411,10 +413,10 @@ export const forgotPassword = async (
     },
   });
 
-  // Send email
-  await sendPasswordResetEmail(user.email, resetToken);
+  // Non-blocking email send
+  sendPasswordResetEmail(user.email, resetToken);
 
-  logger.info(`Password reset email sent: ${user.email}`);
+  logger.info(`Password reset email sent: ${user.email}`, { userId: user.id });
 
   return {
     message: 'If an account with that email exists, a reset link was sent.',
@@ -454,7 +456,7 @@ export const resetPassword = async (
     },
   });
 
-  logger.info(`Password reset successful: ${user.email}`);
+  logger.info(`Password reset successful: ${user.email}`, { userId: user.id });
 
   return { message: 'Password reset successful' };
 };

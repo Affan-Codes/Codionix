@@ -35,15 +35,17 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 
 // Rate limiting
-const limiter = rateLimit({
-  windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.RATE_LIMIT_MAX_REQUESTS,
+const generalApilimiter = rateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS, // 15 minutes
+  max: env.RATE_LIMIT_MAX_REQUESTS * 2, // 200 (was 100, doubled for safety)
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip auth routes (they have their own limiters)
+  skip: (req) => req.path.startsWith('/api/v1/auth'),
 });
 
-app.use('/api', limiter);
+app.use('/api', generalApilimiter);
 
 // Health check (no rate limit)
 app.get('/health', async (_req, res) => {

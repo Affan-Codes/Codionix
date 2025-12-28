@@ -42,6 +42,29 @@ const envSchema = z.object({
       message: 'DB_CONNECTION_TIMEOUT_MS must be at least 1000ms',
     }),
 
+  // Database Query Timeouts
+  DB_QUERY_TIMEOUT_MS: z
+    .string()
+    .default('10000')
+    .transform(Number)
+    .refine((val) => val >= 1000 && val <= 60000, {
+      message: 'DB_QUERY_TIMEOUT_MS must be between 1000ms and 60000ms',
+    }),
+  DB_TRANSACTION_TIMEOUT_MS: z
+    .string()
+    .default('15000')
+    .transform(Number)
+    .refine((val) => val >= 1000 && val <= 60000, {
+      message: 'DB_TRANSACTION_TIMEOUT_MS must be between 1000ms and 60000ms',
+    }),
+  DB_SLOW_QUERY_THRESHOLD_MS: z
+    .string()
+    .default('1000')
+    .transform(Number)
+    .refine((val) => val >= 100, {
+      message: 'DB_SLOW_QUERY_THRESHOLD_MS must be at least 100ms',
+    }),
+
   // JWT
   JWT_ACCESS_SECRET: z
     .string()

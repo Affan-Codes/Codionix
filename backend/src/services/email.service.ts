@@ -8,81 +8,116 @@ interface SendEmailParams {
   html: string;
 }
 
-// Initialize transporter once at module load
-let transporter: nodemailer.Transporter;
+/**
+ * Initialize transporter SYNCHRONOUSLY
+ */
+const createTransporter = (): nodemailer.Transporter => {
+  // Validate SMTP config exists
+  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
+    logger.warn(
+      'SMTP credentials not configured. Emails will be logged but not sent.',
+      {
+        hasHost: !!env.SMTP_HOST,
+        hasUser: !!env.SMTP_USER,
+        hasPass: !!env.SMTP_PASS,
+      }
+    );
 
-const initializeTransporter = async () => {
-  if (env.NODE_ENV === 'production') {
-    // Production: Use real SMTP service
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
-      auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
+    // Return mock transporter for development without SMTP
+    return {
+      sendMail: async (mailOptions: any) => {
+        logger.info('📧 EMAIL (NOT SENT - No SMTP config)', {
+          to: mailOptions.to,
+          subject: mailOptions.subject,
+        });
+        return { messageId: 'mock-' + Date.now() };
       },
-    });
-  } else {
-    // Development: Use Ethereal (fake SMTP for testing)
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-      logger.info('Email service initialized with Ethereal test account');
-      logger.info(`Preview URL: https://ethereal.email/messages`);
-    } catch (error) {
-      logger.error('Failed to create test email account:', error);
-      throw error;
-    }
+    } as any;
   }
+
+  return nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+    auth: {
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+    },
+    // CRITICAL TIMEOUTS: Prevent hanging on SMTP issues
+    connectionTimeout: 5000, // 5s max to connect
+    greetingTimeout: 3000, // 3s max for server greeting
+    socketTimeout: 10000, // 10s max for idle socket
+  });
 };
 
-// Initialize on module load
-initializeTransporter();
+// Create transporter synchronously at module load
+const transporter = createTransporter();
+
+// ===================================
+// NON-BLOCKING EMAIL SENDER
+// ===================================
 
 /**
- * Send email via configured transporter
+ * Send email in background (non-blocking)
+ * CRITICAL: Uses setImmediate() to defer execution
+ *
+ * @returns void - Caller doesn't wait for result
  */
-const sendEmail = async ({
+const sendEmailAsync = async ({
   to,
   subject,
   html,
 }: SendEmailParams): Promise<void> => {
-  try {
-    const info = await transporter.sendMail({
-      from: env.EMAIL_FROM || '"Codionix" <noreply@codionix.com>',
-      to,
-      subject,
-      html,
-    });
+  // Defer to next tick of event loop
+  setImmediate(async () => {
+    const startTime = Date.now();
 
-    if (env.NODE_ENV === 'development') {
-      logger.info('Email sent (test mode)');
-      logger.info(`Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
-    } else {
-      logger.info(`Email sent to ${to}: ${info.messageId}`);
+    try {
+      const info = await transporter.sendMail({
+        from: env.EMAIL_FROM || '"Codionix" <noreply@codionix.com>',
+        to,
+        subject,
+        html,
+      });
+
+      const duration = Date.now() - startTime;
+
+      logger.info('📧 Email sent successfully', {
+        to,
+        subject,
+        messageId: info.messageId,
+        duration: `${duration}ms`,
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      logger.error('📧 Email send failed', {
+        to,
+        subject,
+        duration: `${duration}ms`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // DO NOT throw - this is fire-and-forget
+      // Email failure should not crash the app
+      // User can click "resend verification" if needed
     }
-  } catch (error) {
-    logger.error('Email send failed:', error);
-    throw error;
-  }
+  });
 };
+
+// ===================================
+// PUBLIC API
+// ===================================
 
 /**
  * Send password reset email
+ * Non-blocking - returns immediately
  */
-export const sendPasswordResetEmail = async (
+export const sendPasswordResetEmail = (
   to: string,
   resetToken: string
-): Promise<void> => {
+): void => {
   const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
   const html = `
@@ -96,7 +131,7 @@ export const sendPasswordResetEmail = async (
             display: inline-block; 
             padding: 12px 24px; 
             background-color: #2563eb; 
-            color: white; 
+            color: #ffffff; 
             text-decoration: none; 
             border-radius: 6px; 
             margin: 20px 0;
@@ -122,7 +157,7 @@ export const sendPasswordResetEmail = async (
     </html>
   `;
 
-  await sendEmail({
+  sendEmailAsync({
     to,
     subject: 'Reset Your Password - Codionix',
     html,
@@ -131,11 +166,12 @@ export const sendPasswordResetEmail = async (
 
 /**
  * Send email verification email
+ * Non-blocking - returns immediately
  */
-export const sendEmailVerification = async (
+export const sendEmailVerification = (
   to: string,
   verificationToken: string
-): Promise<void> => {
+): void => {
   const verifyUrl = `${env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
 
   const html = `
@@ -194,7 +230,7 @@ export const sendEmailVerification = async (
     </html>
   `;
 
-  await sendEmail({
+  sendEmailAsync({
     to,
     subject: 'Welcome to Codionix - Verify Your Email',
     html,
