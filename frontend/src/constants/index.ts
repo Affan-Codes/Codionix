@@ -8,6 +8,8 @@ export const ROUTES = {
   REGISTER: "/register",
   VERIFY_EMAIL: "/verify-email",
   VERIFICATION_PENDING: "/verification-pending",
+  FORGOT_PASSWORD: "/forgot-password",
+  RESET_PASSWORD: "/reset-password",
   DASHBOARD: "/dashboard",
   PROJECTS: "/projects",
   PROJECT_DETAIL: "/projects/:id",
@@ -15,6 +17,8 @@ export const ROUTES = {
   APPLICATIONS: "/applications",
   PROFILE: "/profile",
   UNAUTHORIZED: "/unauthorized",
+  EDIT_PROJECT: "/projects/:id/edit",
+  PROJECT_APPLICANT: "/projects/:id/applicants",
 } as const;
 
 export const STORAGE_KEYS = {

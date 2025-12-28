@@ -15,6 +15,8 @@ const VerifyEmail = lazy(() => import("@/pages/auth/VerifyEmail"));
 const VerificationPending = lazy(
   () => import("@/pages/auth/VerificationPending")
 );
+const ForgotPassword = lazy(() => import("@/pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const Dashboard = lazy(() => import("@/pages/dashboard/Dashboard"));
 const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
 const CreateProjectPage = lazy(
@@ -129,6 +131,24 @@ export const router = createBrowserRouter([
       </LazyRoute>
     ),
   },
+  {
+    path: ROUTES.FORGOT_PASSWORD,
+    element: (
+      <PublicOnlyRoute>
+        <LazyRoute>
+          <ForgotPassword />
+        </LazyRoute>
+      </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: ROUTES.RESET_PASSWORD,
+    element: (
+      <LazyRoute>
+        <ResetPassword />
+      </LazyRoute>
+    ),
+  },
 
   // Protected routes
   {
@@ -198,7 +218,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: "/projects/:id/edit",
+    path: ROUTES.EDIT_PROJECT,
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
@@ -210,7 +230,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: "/projects/:id/applicants",
+    path: ROUTES.PROJECT_APPLICANT,
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
