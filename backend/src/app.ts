@@ -42,7 +42,7 @@ const generalApilimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Skip auth routes (they have their own limiters)
-  skip: (req) => req.path.startsWith('/api/v1/auth'),
+  skip: (req) => req.path.startsWith('/v1/auth'),
 });
 
 app.use('/api', generalApilimiter);

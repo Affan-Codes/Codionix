@@ -309,56 +309,62 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
   // Verify refresh token
   const payload = verifyRefreshToken(token);
 
-  // Check database
-  const storedToken = await prisma.refreshToken.findUnique({
-    where: { token },
-  });
+  const result = await prisma.$transaction(async (tx) => {
+    // Lock the row for update
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token },
+    });
 
-  if (!storedToken || storedToken.isRevoked) {
-    throw new UnauthorizedError('Invalid refresh token');
-  }
+    if (!storedToken || storedToken.isRevoked) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
 
-  if (storedToken.expiresAt < new Date()) {
-    throw new UnauthorizedError('Refresh token expired');
-  }
+    if (storedToken.expiresAt < new Date()) {
+      throw new UnauthorizedError('Refresh token expired');
+    }
 
-  // Verify user exists
-  const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: { id: true, email: true, role: true },
-  });
+    // Verify user exists
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, email: true, role: true },
+    });
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
 
-  // Generate new tokens
-  const tokenPayload: JwtPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-  };
+    // Generate new tokens
+    const tokenPayload: JwtPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    };
 
-  const newTokens = generateTokenPair(tokenPayload);
+    const newTokens = generateTokenPair(tokenPayload);
 
-  // Token rotation: revoke old, create new
-  await prisma.$transaction([
-    prisma.refreshToken.update({
+    // Revoke the old token
+    await tx.refreshToken.update({
       where: { token },
       data: { isRevoked: true },
-    }),
-    prisma.refreshToken.create({
+    });
+
+    // Create new Token
+    await tx.refreshToken.create({
       data: {
         userId: user.id,
         token: newTokens.refreshToken,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
-    }),
-  ]);
+    });
 
-  logger.info(`Token refreshed: ${user.email}`, { userId: user.id });
+    return { newTokens, user };
+  });
 
-  return newTokens;
+  logger.info(`Token refreshed: ${result.user.email}`, {
+    userId: result.user.id,
+  });
+
+  return result.newTokens;
 };
 
 /**
