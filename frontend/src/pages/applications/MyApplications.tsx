@@ -1,4 +1,3 @@
-import { applicationApi } from "@/api/application.api";
 import { ApplicationCard } from "@/components/application/ApplicationCard";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -10,61 +9,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import type { Application } from "@/types";
+import { useMyApplications } from "@/hooks/queries/useApplications";
 import { FileTextIcon, Loader2Icon, SearchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
 
 export default function MyApplications() {
   const navigate = useNavigate();
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [filteredApplications, setFilteredApplications] = useState<
-    Application[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Fetch applications
-  useEffect(() => {
-    const fetchApplications = async () => {
-      setIsLoading(true);
-      try {
-        const data = await applicationApi.getMyApplications();
-        setApplications(data);
-        setFilteredApplications(data);
-      } catch (error: any) {
-        console.error("Failed to fetch applications:", error);
-        toast.error("Failed to load applications", {
-          description: "Please try again later",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const {
+    data: applications = [],
+    isLoading,
+    isError,
+    error,
+  } = useMyApplications();
 
-    fetchApplications();
-  }, []);
-
-  // Filter applications by status
-  useEffect(() => {
-    if (statusFilter === "all") {
-      setFilteredApplications(applications);
-    } else {
-      setFilteredApplications(
-        applications.filter((app) => app.status === statusFilter)
-      );
-    }
-  }, [statusFilter, applications]);
+  const filteredApplications = useMemo(() => {
+    if (statusFilter === "all") return applications;
+    return applications.filter((app) => app.status === statusFilter);
+  }, [applications, statusFilter]);
 
   // Stats calculation
-  const stats = {
-    total: applications.length,
-    pending: applications.filter((a) => a.status === "PENDING").length,
-    underReview: applications.filter((a) => a.status === "UNDER_REVIEW").length,
-    accepted: applications.filter((a) => a.status === "ACCEPTED").length,
-    rejected: applications.filter((a) => a.status === "REJECTED").length,
-  };
+  const stats = useMemo(
+    () => ({
+      total: applications.length,
+      pending: applications.filter((a) => a.status === "PENDING").length,
+      underReview: applications.filter((a) => a.status === "UNDER_REVIEW")
+        .length,
+      accepted: applications.filter((a) => a.status === "ACCEPTED").length,
+      rejected: applications.filter((a) => a.status === "REJECTED").length,
+    }),
+    [applications]
+  );
+
+  // Error state
+  if (isError) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+            <FileTextIcon className="h-8 w-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Failed to load applications
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {(error as any)?.response?.data?.error?.message ||
+              "Please try again later"}
+          </p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
+        </div>
+      </Layout>
+    );
+  }
 
   if (isLoading) {
     return (

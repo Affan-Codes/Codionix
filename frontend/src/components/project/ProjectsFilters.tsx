@@ -27,11 +27,19 @@ export interface FilterState {
 // Helper to convert "all" to empty string for API
 export const getApiFilters = (filters: FilterState) => {
   return {
-    search: filters.search,
-    projectType: filters.projectType === "all" ? "" : filters.projectType,
+    search: filters.search || undefined, // Convert empty string to undefined
+    projectType:
+      filters.projectType && filters.projectType !== "all"
+        ? (filters.projectType as "PROJECT" | "INTERNSHIP")
+        : undefined,
     difficultyLevel:
-      filters.difficultyLevel === "all" ? "" : filters.difficultyLevel,
-    status: filters.status === "all" ? "" : filters.status,
+      filters.difficultyLevel && filters.difficultyLevel !== "all"
+        ? (filters.difficultyLevel as "BEGINNER" | "INTERMEDIATE" | "ADVANCED")
+        : undefined,
+    status:
+      filters.status && filters.status !== "all"
+        ? (filters.status as "DRAFT" | "PUBLISHED" | "CLOSED")
+        : undefined,
   };
 };
 

@@ -1,4 +1,3 @@
-import { projectApi } from "@/api/project.api";
 import { ApplicationForm } from "@/components/application/ApplicationForm";
 import { Layout } from "@/components/layout/Layout";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
-import type { Project } from "@/types";
+import { useProject } from "@/hooks/queries/useProjects";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ArrowLeftIcon,
@@ -25,7 +24,7 @@ import {
   MapPinIcon,
   UsersIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -33,37 +32,16 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
-
-  const [project, setProject] = useState<Project | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [showApplicationForm, setShowApplicationForm] = useState(false);
 
-  // Fetch project details
-  useEffect(() => {
-    if (!id) {
-      navigate(ROUTES.PROJECTS);
-      return;
-    }
-
-    const fetchProject = async () => {
-      setIsLoading(true);
-      try {
-        const data = await projectApi.getProjectById(id);
-        setProject(data);
-      } catch (error: any) {
-        console.error("Failed to fetch project:", error);
-        toast.error("Failed to load project", {
-          description:
-            error.response?.data?.error?.message || "Project not found",
-        });
-        navigate(ROUTES.PROJECTS);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchProject();
-  }, [id, navigate]);
+  const {
+    data: project,
+    isLoading,
+    isError,
+    error,
+  } = useProject(id || "", {
+    enabled: !!id,
+  });
 
   // Check permissions
   const isCreator = isAuthenticated && user?.id === project?.createdBy.id;
@@ -76,10 +54,6 @@ export default function ProjectDetailPage() {
   const handleApplicationSuccess = () => {
     setShowApplicationForm(false);
     toast.success("Application submitted successfully!");
-    // Optionally refresh project data to update applicant count
-    if (id) {
-      projectApi.getProjectById(id).then(setProject);
-    }
   };
 
   // Handle apply button click
@@ -96,7 +70,6 @@ export default function ProjectDetailPage() {
     }
 
     setShowApplicationForm(true);
-    // Scroll to form
     setTimeout(() => {
       document.getElementById("application-form")?.scrollIntoView({
         behavior: "smooth",
@@ -104,6 +77,29 @@ export default function ProjectDetailPage() {
       });
     }, 100);
   };
+
+  // Error state
+  if (isError) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+            <BriefcaseIcon className="h-8 w-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Failed to load project
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {(error as any)?.response?.data?.error?.message ||
+              "Project not found"}
+          </p>
+          <Button onClick={() => navigate(ROUTES.PROJECTS)}>
+            Back to Projects
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
 
   if (isLoading) {
     return (

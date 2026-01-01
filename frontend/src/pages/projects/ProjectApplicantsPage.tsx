@@ -1,4 +1,3 @@
-import { projectApi } from "@/api/project.api";
 import { ApplicantCard } from "@/components/application/ApplicantCard";
 import { ReviewApplicationDialog } from "@/components/application/ReviewApplicationDialog";
 import { Layout } from "@/components/layout/Layout";
@@ -11,22 +10,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import type { Application, Project } from "@/types";
+import { useProject, useProjectApplicants } from "@/hooks/queries/useProjects";
+import type { Application } from "@/types";
 import { ArrowLeftIcon, Loader2Icon, UsersIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 export default function ProjectApplicantsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
-  const [project, setProject] = useState<Project | null>(null);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [filteredApplications, setFilteredApplications] = useState<
-    Application[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // Review dialog state
@@ -34,49 +27,38 @@ export default function ProjectApplicantsPage() {
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
 
-  // Fetch project and applications
-  useEffect(() => {
-    if (!id) {
-      navigate(ROUTES.PROJECTS);
-      return;
-    }
+  const {
+    data: project,
+    isLoading: isProjectLoading,
+    isError: isProjectError,
+    error: projectError,
+  } = useProject(id || "", { enabled: !!id });
 
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        // Fetch project details
-        const projectData = await projectApi.getProjectById(id);
-        setProject(projectData);
+  const {
+    data: applications = [],
+    isLoading: isApplicantsLoading,
+    isError: isApplicantsError,
+    error: applicantsError,
+  } = useProjectApplicants(id || "");
 
-        // Fetch applications for this project
-        const applicationsData = await projectApi.getProjectApplications(id);
-        setApplications(applicationsData);
-        setFilteredApplications(applicationsData);
-      } catch (error: any) {
-        console.error("Failed to fetch data:", error);
-        toast.error("Failed to load applicants", {
-          description:
-            error.response?.data?.error?.message || "Please try again later",
-        });
-        navigate(ROUTES.PROJECTS);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Filter applications by status (client-side)
+  const filteredApplications = useMemo(() => {
+    if (statusFilter === "all") return applications;
+    return applications.filter((app) => app.status === statusFilter);
+  }, [applications, statusFilter]);
 
-    fetchData();
-  }, [id, navigate]);
-
-  // Filter applications by status
-  useEffect(() => {
-    if (statusFilter === "all") {
-      setFilteredApplications(applications);
-    } else {
-      setFilteredApplications(
-        applications.filter((app) => app.status === statusFilter)
-      );
-    }
-  }, [statusFilter, applications]);
+  // Stats calculation
+  const stats = useMemo(
+    () => ({
+      total: applications.length,
+      pending: applications.filter((a) => a.status === "PENDING").length,
+      underReview: applications.filter((a) => a.status === "UNDER_REVIEW")
+        .length,
+      accepted: applications.filter((a) => a.status === "ACCEPTED").length,
+      rejected: applications.filter((a) => a.status === "REJECTED").length,
+    }),
+    [applications]
+  );
 
   // Handle review click
   const handleReviewClick = (applicationId: string) => {
@@ -89,25 +71,36 @@ export default function ProjectApplicantsPage() {
 
   // Handle review success
   const handleReviewSuccess = async () => {
-    // Refresh applications
-    if (!id) return;
-
-    try {
-      const applicationsData = await projectApi.getProjectApplications(id);
-      setApplications(applicationsData);
-    } catch (error) {
-      console.error("Failed to refresh applications:", error);
-    }
+    toast.success("Application status updated");
   };
 
-  // Stats calculation
-  const stats = {
-    total: applications.length,
-    pending: applications.filter((a) => a.status === "PENDING").length,
-    underReview: applications.filter((a) => a.status === "UNDER_REVIEW").length,
-    accepted: applications.filter((a) => a.status === "ACCEPTED").length,
-    rejected: applications.filter((a) => a.status === "REJECTED").length,
-  };
+  // Combined loading state
+  const isLoading = isProjectLoading || isApplicantsLoading;
+  const isError = isProjectError || isApplicantsError;
+  const error = projectError || applicantsError;
+
+  // Error state
+  if (isError) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+            <UsersIcon className="h-8 w-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Failed to load applicants
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {(error as any)?.response?.data?.error?.message ||
+              "Please try again later"}
+          </p>
+          <Button onClick={() => navigate(ROUTES.PROJECTS)}>
+            Back to Projects
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
 
   if (isLoading) {
     return (
