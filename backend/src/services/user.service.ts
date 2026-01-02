@@ -1,11 +1,11 @@
+import { prisma } from '../config/database.js';
+import { NotFoundError } from '../utils/errors.js';
+import { trackOperation } from '../utils/logger.js';
+import type { UpdateProfileInput } from '../validators/user.validator.js';
+
 // ===================================
 // RESPONSE TYPES
 // ===================================
-
-import { prisma } from '../config/database.js';
-import { NotFoundError } from '../utils/errors.js';
-import { logger } from '../utils/logger.js';
-import type { UpdateProfileInput } from '../validators/user.validator.js';
 
 export interface UserProfile {
   id: string;
@@ -31,30 +31,49 @@ export interface UserProfile {
  * Get user profile by ID
  */
 export const getUserProfile = async (userId: string): Promise<UserProfile> => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      phone: true,
-      bio: true,
-      profilePictureUrl: true,
-      linkedinUrl: true,
-      githubUrl: true,
-      skills: true,
-      isEmailVerified: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+  const tracker = trackOperation('user.getProfile', undefined, {
+    userId,
   });
 
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        phone: true,
+        bio: true,
+        profilePictureUrl: true,
+        linkedinUrl: true,
+        githubUrl: true,
+        skills: true,
+        isEmailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  return user;
+    if (!user) {
+      tracker.failure(new NotFoundError('User not found'), { userId });
+      throw new NotFoundError('User not found');
+    }
+
+    tracker.success({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      emailVerified: user.isEmailVerified,
+    });
+
+    return user;
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) {
+      tracker.failure(error, { userId });
+    }
+    throw error;
+  }
 };
 
 /**
@@ -64,39 +83,57 @@ export const updateUserProfile = async (
   userId: string,
   data: UpdateProfileInput
 ): Promise<UserProfile> => {
-  // Check if user exists
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
+  const tracker = trackOperation('user.updateProfile', undefined, {
+    userId,
+    fieldsUpdated: Object.keys(data).length,
   });
 
-  if (!existingUser) {
-    throw new NotFoundError('User not found');
+  try {
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!existingUser) {
+      tracker.failure(new NotFoundError('User not found'), { userId });
+      throw new NotFoundError('User not found');
+    }
+
+    // Update user
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        phone: true,
+        bio: true,
+        profilePictureUrl: true,
+        linkedinUrl: true,
+        githubUrl: true,
+        skills: true,
+        isEmailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    tracker.success({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      fieldsUpdated: Object.keys(data),
+      skillsCount: updatedUser.skills.length,
+    });
+
+    return updatedUser;
+  } catch (error) {
+    if (!(error instanceof NotFoundError)) {
+      tracker.failure(error, { userId });
+    }
+    throw error;
   }
-
-  // Update user
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data,
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      phone: true,
-      bio: true,
-      profilePictureUrl: true,
-      linkedinUrl: true,
-      githubUrl: true,
-      skills: true,
-      isEmailVerified: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  logger.info(`User profile updated: ${updatedUser.email}`);
-
-  return updatedUser;
 };
 
 /**
@@ -106,27 +143,40 @@ export const updateProfilePicture = async (
   userId: string,
   profilePictureUrl: string
 ): Promise<UserProfile> => {
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: { profilePictureUrl },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      phone: true,
-      bio: true,
-      profilePictureUrl: true,
-      linkedinUrl: true,
-      githubUrl: true,
-      skills: true,
-      isEmailVerified: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+  const tracker = trackOperation('user.updateProfilePicture', undefined, {
+    userId,
   });
 
-  logger.info(`Profile picture updated for user: ${updatedUser.email}`);
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { profilePictureUrl },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        phone: true,
+        bio: true,
+        profilePictureUrl: true,
+        linkedinUrl: true,
+        githubUrl: true,
+        skills: true,
+        isEmailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-  return updatedUser;
+    tracker.success({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      hasProfilePicture: !!profilePictureUrl,
+    });
+
+    return updatedUser;
+  } catch (error) {
+    tracker.failure(error, { userId });
+    throw error;
+  }
 };

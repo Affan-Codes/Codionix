@@ -43,14 +43,16 @@ export const requestCorrelation = (
   // Add to response headers so client can reference it
   res.setHeader('X-Correlation-ID', correlationId);
 
-  // Log incoming request with correlation context
+  // Log incoming request with structured context
   logger.info('Incoming request', {
     correlationId,
     method: req.method,
     path: req.path,
-    query: req.query,
+    query: Object.keys(req.query).length > 0 ? req.query : undefined,
     ip: req.ip || req.socket.remoteAddress,
     userAgent: req.headers['user-agent'],
+    category: 'http',
+    direction: 'inbound',
   });
 
   // Capture response finish event
@@ -60,15 +62,29 @@ export const requestCorrelation = (
     // Calculate request duration
     const duration = req.startTime ? Date.now() - req.startTime : 0;
 
-    // Log response with full context
-    logger.info('Request completed', {
+    // Determine log level based on status code
+    let level: 'info' | 'warn' | 'error' = 'info';
+    if (res.statusCode >= 500) {
+      level = 'error';
+    } else if (res.statusCode >= 400) {
+      level = 'warn';
+    }
+
+    // Log response with full structured context
+    logger.log(level, 'Request completed', {
       correlationId,
       method: req.method,
       path: req.path,
       statusCode: res.statusCode,
       duration: `${duration}ms`,
+      durationMs: duration,
       userId: req.user?.userId,
       userEmail: req.user?.email,
+      userRole: req.user?.role,
+      category: 'http',
+      direction: 'outbound',
+      // Add performance warning if slow
+      ...(duration > 3000 && { performance: 'slow' }),
     });
 
     // Warn on slow requests (>3 seconds)
@@ -78,7 +94,9 @@ export const requestCorrelation = (
         method: req.method,
         path: req.path,
         duration: `${duration}ms`,
+        durationMs: duration,
         threshold: '3000ms',
+        category: 'performance',
       });
     }
 
@@ -91,7 +109,8 @@ export const requestCorrelation = (
 
 /**
  * Get correlation context for current request
- * Use this in services/utils to add correlation to logs
+ * DEPRECATED: Use getLogContext from logger.ts instead
+ * Kept for backward compatibility
  */
 export const getCorrelationContext = (req?: Request) => {
   if (!req) return {};

@@ -6,7 +6,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../utils/errors.js';
-import { logger } from '../utils/logger.js';
+import { logger, trackOperation } from '../utils/logger.js';
 import type {
   CreateApplicationInput,
   ListApplicationsQuery,
@@ -72,66 +72,113 @@ export const createApplication = async (
   userId: string,
   data: CreateApplicationInput
 ): Promise<ApplicationResponse> => {
-  const { projectId, coverLetter, resumeUrl } = data;
-
-  // Check if project exists and is published
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const tracker = trackOperation('application.create', undefined, {
+    userId,
+    projectId: data.projectId,
   });
 
-  if (!project) {
-    throw new NotFoundError('Project not found');
-  }
+  try {
+    const { projectId, coverLetter, resumeUrl } = data;
 
-  if (project.status !== 'PUBLISHED') {
-    throw new ValidationError('Cannot apply to unpublished projects');
-  }
-
-  // Check if project has reached max applicants
-  if (
-    project.maxApplicants &&
-    project.currentApplicants >= project.maxApplicants
-  ) {
-    throw new ValidationError('Project has reached maximum applicants');
-  }
-
-  // Check if user already applied
-  const existingApplication = await prisma.application.findUnique({
-    where: {
-      projectId_studentId: {
-        projectId,
-        studentId: userId,
-      },
-    },
-  });
-
-  if (existingApplication) {
-    throw new ConflictError('You have already applied to this project');
-  }
-
-  // Create application and increment currentApplicants
-  const application = await prisma.$transaction(async (tx) => {
-    const app = await tx.application.create({
-      data: {
-        projectId,
-        studentId: userId,
-        coverLetter,
-        ...(resumeUrl !== undefined && { resumeUrl }),
-      },
-      include: applicationInclude,
-    });
-
-    await tx.project.update({
+    // Check if project exists and is published
+    const project = await prisma.project.findUnique({
       where: { id: projectId },
-      data: { currentApplicants: { increment: 1 } },
     });
 
-    return app;
-  });
+    if (!project) {
+      logger.warn('Application to non-existent project', {
+        operation: 'application.create',
+        userId,
+        projectId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Project not found');
+    }
 
-  logger.info(`Application created: ${application.id} by user: ${userId}`);
+    if (project.status !== 'PUBLISHED') {
+      logger.warn('Application to unpublished project', {
+        operation: 'application.create',
+        userId,
+        projectId,
+        projectStatus: project.status,
+        outcome: 'validation_error',
+      });
+      throw new ValidationError('Cannot apply to unpublished projects');
+    }
 
-  return application;
+    // Check if project has reached max applicants
+    if (
+      project.maxApplicants &&
+      project.currentApplicants >= project.maxApplicants
+    ) {
+      logger.warn('Application to full project', {
+        operation: 'application.create',
+        userId,
+        projectId,
+        currentApplicants: project.currentApplicants,
+        maxApplicants: project.maxApplicants,
+        outcome: 'validation_error',
+      });
+      throw new ValidationError('Project has reached maximum applicants');
+    }
+
+    // Check if user already applied
+    const existingApplication = await prisma.application.findUnique({
+      where: {
+        projectId_studentId: {
+          projectId,
+          studentId: userId,
+        },
+      },
+    });
+
+    if (existingApplication) {
+      logger.warn('Duplicate application attempt', {
+        operation: 'application.create',
+        userId,
+        projectId,
+        existingApplicationId: existingApplication.id,
+        outcome: 'conflict',
+      });
+      throw new ConflictError('You have already applied to this project');
+    }
+
+    // Create application and increment currentApplicants
+    const application = await prisma.$transaction(async (tx) => {
+      const app = await tx.application.create({
+        data: {
+          projectId,
+          studentId: userId,
+          coverLetter,
+          ...(resumeUrl !== undefined && { resumeUrl }),
+        },
+        include: applicationInclude,
+      });
+
+      await tx.project.update({
+        where: { id: projectId },
+        data: { currentApplicants: { increment: 1 } },
+      });
+
+      return app;
+    });
+
+    tracker.success({
+      applicationId: application.id,
+      userId,
+      projectId,
+      projectTitle: project.title,
+      currentApplicants: project.currentApplicants + 1,
+    });
+
+    return application;
+  } catch (error) {
+    tracker.failure(error, {
+      userId,
+      projectId: data.projectId,
+    });
+    throw error;
+  }
 };
 
 /**
@@ -140,40 +187,61 @@ export const createApplication = async (
 export const listApplications = async (
   query: ListApplicationsQuery
 ): Promise<PaginatedApplications> => {
-  const { page, limit, status, projectId, studentId } = query;
+  const tracker = trackOperation('application.list', undefined, {
+    page: query.page,
+    limit: query.limit,
+    status: query.status,
+  });
 
-  const skip = (page - 1) * limit;
+  try {
+    const { page, limit, status, projectId, studentId } = query;
 
-  const where: Prisma.ApplicationWhereInput = {};
+    const skip = (page - 1) * limit;
 
-  if (status) where.status = status;
-  if (projectId) where.projectId = projectId;
-  if (studentId) where.studentId = studentId;
+    const where: Prisma.ApplicationWhereInput = {};
 
-  const [applications, total] = await Promise.all([
-    prisma.application.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { appliedAt: 'desc' },
-      include: applicationInclude,
-    }),
-    prisma.application.count({ where }),
-  ]);
+    if (status) where.status = status;
+    if (projectId) where.projectId = projectId;
+    if (studentId) where.studentId = studentId;
 
-  const totalPages = Math.ceil(total / limit);
+    const [applications, total] = await Promise.all([
+      prisma.application.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { appliedAt: 'desc' },
+        include: applicationInclude,
+      }),
+      prisma.application.count({ where }),
+    ]);
 
-  return {
-    data: applications,
-    pagination: {
-      total,
+    const totalPages = Math.ceil(total / limit);
+
+    tracker.success({
+      resultsCount: applications.length,
+      totalResults: total,
       page,
-      limit,
       totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
-    },
-  };
+    });
+
+    return {
+      data: applications,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  } catch (error) {
+    tracker.failure(error, {
+      page: query.page,
+      limit: query.limit,
+    });
+    throw error;
+  }
 };
 
 /**
@@ -182,16 +250,37 @@ export const listApplications = async (
 export const getApplicationById = async (
   applicationId: string
 ): Promise<ApplicationResponse> => {
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    include: applicationInclude,
+  const tracker = trackOperation('application.getById', undefined, {
+    applicationId,
   });
 
-  if (!application) {
-    throw new NotFoundError('Application not found');
-  }
+  try {
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      include: applicationInclude,
+    });
 
-  return application;
+    if (!application) {
+      logger.warn('Application not found', {
+        operation: 'application.getById',
+        applicationId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Application not found');
+    }
+
+    tracker.success({
+      applicationId: application.id,
+      status: application.status,
+      studentId: application.studentId,
+      projectId: application.projectId,
+    });
+
+    return application;
+  } catch (error) {
+    tracker.failure(error, { applicationId });
+    throw error;
+  }
 };
 
 /**
@@ -202,47 +291,86 @@ export const updateApplicationStatus = async (
   userId: string,
   data: UpdateApplicationStatusInput
 ): Promise<ApplicationResponse> => {
-  const { status, rejectionReason } = data;
-
-  // Get application with project details
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    include: { project: true },
+  const tracker = trackOperation('application.updateStatus', undefined, {
+    applicationId,
+    userId,
+    newStatus: data.status,
   });
 
-  if (!application) {
-    throw new NotFoundError('Application not found');
+  try {
+    const { status, rejectionReason } = data;
+
+    // Get application with project details
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      include: { project: true },
+    });
+
+    if (!application) {
+      logger.warn('Status update on non-existent application', {
+        operation: 'application.updateStatus',
+        applicationId,
+        userId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Application not found');
+    }
+
+    // Check if user is project owner
+    if (application.project.createdById !== userId) {
+      logger.warn('Unauthorized application status update', {
+        operation: 'application.updateStatus',
+        applicationId,
+        userId,
+        projectOwnerId: application.project.createdById,
+        outcome: 'forbidden',
+      });
+      throw new ForbiddenError(
+        'You do not have permission to update this application'
+      );
+    }
+
+    // Validate status transition
+    if (status === 'REJECTED' && !rejectionReason) {
+      logger.warn('Rejection without reason', {
+        operation: 'application.updateStatus',
+        applicationId,
+        userId,
+        outcome: 'validation_error',
+      });
+      throw new ValidationError('Rejection reason is required when rejecting');
+    }
+
+    // Update application
+    const updatedApplication = await prisma.application.update({
+      where: { id: applicationId },
+      data: {
+        status,
+        reviewedAt: new Date(),
+        reviewerId: userId,
+        ...(rejectionReason !== undefined && { rejectionReason }),
+      },
+      include: applicationInclude,
+    });
+
+    tracker.success({
+      applicationId,
+      previousStatus: application.status,
+      newStatus: status,
+      studentId: application.studentId,
+      projectId: application.projectId,
+      hasRejectionReason: !!rejectionReason,
+    });
+
+    return updatedApplication;
+  } catch (error) {
+    tracker.failure(error, {
+      applicationId,
+      userId,
+      newStatus: data.status,
+    });
+    throw error;
   }
-
-  // Check if user is project owner
-  if (application.project.createdById !== userId) {
-    throw new ForbiddenError(
-      'You do not have permission to update this application'
-    );
-  }
-
-  // Validate status transition
-  if (status === 'REJECTED' && !rejectionReason) {
-    throw new ValidationError('Rejection reason is required when rejecting');
-  }
-
-  // Update application
-  const updatedApplication = await prisma.application.update({
-    where: { id: applicationId },
-    data: {
-      status,
-      reviewedAt: new Date(),
-      reviewerId: userId,
-      ...(rejectionReason !== undefined && { rejectionReason }),
-    },
-    include: applicationInclude,
-  });
-
-  logger.info(
-    `Application ${applicationId} status updated to ${status} by ${userId}`
-  );
-
-  return updatedApplication;
 };
 
 /**
@@ -251,13 +379,27 @@ export const updateApplicationStatus = async (
 export const getMyApplications = async (
   userId: string
 ): Promise<ApplicationResponse[]> => {
-  const applications = await prisma.application.findMany({
-    where: { studentId: userId },
-    orderBy: { appliedAt: 'desc' },
-    include: applicationInclude,
+  const tracker = trackOperation('application.getMy', undefined, {
+    userId,
   });
 
-  return applications;
+  try {
+    const applications = await prisma.application.findMany({
+      where: { studentId: userId },
+      orderBy: { appliedAt: 'desc' },
+      include: applicationInclude,
+    });
+
+    tracker.success({
+      userId,
+      applicationsCount: applications.length,
+    });
+
+    return applications;
+  } catch (error) {
+    tracker.failure(error, { userId });
+    throw error;
+  }
 };
 
 /**
@@ -267,26 +409,55 @@ export const getProjectApplications = async (
   projectId: string,
   userId: string
 ): Promise<ApplicationResponse[]> => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const tracker = trackOperation('application.getByProject', undefined, {
+    projectId,
+    userId,
   });
 
-  if (!project) {
-    throw new NotFoundError('Project not found');
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      logger.warn('Applications request for non-existent project', {
+        operation: 'application.getByProject',
+        projectId,
+        userId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Project not found');
+    }
+
+    // Check if user is project owner
+    if (project.createdById !== userId) {
+      logger.warn('Unauthorized project applications access', {
+        operation: 'application.getByProject',
+        projectId,
+        userId,
+        projectOwnerId: project.createdById,
+        outcome: 'forbidden',
+      });
+      throw new ForbiddenError(
+        'You do not have permission to view these applications'
+      );
+    }
+
+    const applications = await prisma.application.findMany({
+      where: { projectId },
+      orderBy: { appliedAt: 'desc' },
+      include: applicationInclude,
+    });
+
+    tracker.success({
+      projectId,
+      projectTitle: project.title,
+      applicationsCount: applications.length,
+    });
+
+    return applications;
+  } catch (error) {
+    tracker.failure(error, { projectId, userId });
+    throw error;
   }
-
-  // Check if user is project owner
-  if (project.createdById !== userId) {
-    throw new ForbiddenError(
-      'You do not have permission to view these applications'
-    );
-  }
-
-  const applications = await prisma.application.findMany({
-    where: { projectId },
-    orderBy: { appliedAt: 'desc' },
-    include: applicationInclude,
-  });
-
-  return applications;
 };

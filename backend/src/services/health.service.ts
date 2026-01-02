@@ -1,10 +1,10 @@
-// ===================================
-// HEALTH CHECK TYPES
-// ===================================
-
 import { db } from '../config/database.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+
+// ===================================
+// HEALTH CHECK TYPES
+// ===================================
 
 export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy';
 

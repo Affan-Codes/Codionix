@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
-import { logger } from '../utils/logger.js';
+import { logExternalCall, logger } from '../utils/logger.js';
 
 interface SendEmailParams {
   to: string;
@@ -14,21 +14,21 @@ interface SendEmailParams {
 const createTransporter = (): nodemailer.Transporter => {
   // Validate SMTP config exists
   if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
-    logger.warn(
-      'SMTP credentials not configured. Emails will be logged but not sent.',
-      {
-        hasHost: !!env.SMTP_HOST,
-        hasUser: !!env.SMTP_USER,
-        hasPass: !!env.SMTP_PASS,
-      }
-    );
+    logger.warn('SMTP credentials not configured', {
+      operation: 'email.init',
+      hasHost: !!env.SMTP_HOST,
+      hasUser: !!env.SMTP_USER,
+      hasPass: !!env.SMTP_PASS,
+    });
 
     // Return mock transporter for development without SMTP
     return {
       sendMail: async (mailOptions: any) => {
-        logger.info('📧 EMAIL (NOT SENT - No SMTP config)', {
-          to: mailOptions.to,
+        logger.info('Email not sent - no SMTP config', {
+          operation: 'email.send',
+          recipient: mailOptions.to,
           subject: mailOptions.subject,
+          category: 'email',
         });
         return { messageId: 'mock-' + Date.now() };
       },
@@ -82,21 +82,20 @@ const sendEmailAsync = async ({
 
       const duration = Date.now() - startTime;
 
-      logger.info('📧 Email sent successfully', {
-        to,
+      logExternalCall('email', 'sendMail', duration, true, {
+        recipient: to,
         subject,
         messageId: info.messageId,
-        duration: `${duration}ms`,
+        category: 'email',
       });
     } catch (error) {
       const duration = Date.now() - startTime;
 
-      logger.error('📧 Email send failed', {
-        to,
+      logExternalCall('email', 'sendMail', duration, false, {
+        recipient: to,
         subject,
-        duration: `${duration}ms`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        category: 'email',
       });
 
       // DO NOT throw - this is fire-and-forget

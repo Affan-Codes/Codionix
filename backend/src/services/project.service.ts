@@ -1,7 +1,7 @@
 import { prisma } from '../config/database.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { ForbiddenError, NotFoundError } from '../utils/errors.js';
-import { logger } from '../utils/logger.js';
+import { logger, trackOperation } from '../utils/logger.js';
 import type {
   CreateProjectInput,
   ListProjectsQuery,
@@ -56,36 +56,57 @@ export const createProject = async (
   userId: string,
   data: CreateProjectInput
 ): Promise<ProjectResponse> => {
-  const prismaData: Prisma.ProjectCreateInput = {
+  const tracker = trackOperation('project.create', undefined, {
+    userId,
     title: data.title,
-    description: data.description,
-    skills: data.skills,
-    duration: data.duration,
-    deadline: data.deadline,
     projectType: data.projectType,
-    isRemote: data.isRemote,
-    difficultyLevel: data.difficultyLevel,
     status: data.status,
-    maxApplicants: data.maxApplicants,
-
-    // Nullable fields – ONLY pass if present
-    ...(data.stipend !== undefined && { stipend: data.stipend }),
-    ...(data.companyName !== undefined && { companyName: data.companyName }),
-    ...(data.location !== undefined && { location: data.location }),
-
-    createdBy: {
-      connect: { id: userId },
-    },
-  };
-
-  const project = await prisma.project.create({
-    data: prismaData,
-    include: projectInclude,
   });
 
-  logger.info(`Project created: ${project.title} by user: ${userId}`);
+  try {
+    const prismaData: Prisma.ProjectCreateInput = {
+      title: data.title,
+      description: data.description,
+      skills: data.skills,
+      duration: data.duration,
+      deadline: data.deadline,
+      projectType: data.projectType,
+      isRemote: data.isRemote,
+      difficultyLevel: data.difficultyLevel,
+      status: data.status,
+      maxApplicants: data.maxApplicants,
 
-  return project;
+      // Nullable fields – ONLY pass if present
+      ...(data.stipend !== undefined && { stipend: data.stipend }),
+      ...(data.companyName !== undefined && { companyName: data.companyName }),
+      ...(data.location !== undefined && { location: data.location }),
+
+      createdBy: {
+        connect: { id: userId },
+      },
+    };
+
+    const project = await prisma.project.create({
+      data: prismaData,
+      include: projectInclude,
+    });
+
+    tracker.success({
+      projectId: project.id,
+      title: project.title,
+      projectType: project.projectType,
+      status: project.status,
+      skillsCount: project.skills.length,
+    });
+
+    return project;
+  } catch (error) {
+    tracker.failure(error, {
+      userId,
+      title: data.title,
+    });
+    throw error;
+  }
 };
 
 /**
@@ -94,55 +115,85 @@ export const createProject = async (
 export const listProjects = async (
   query: ListProjectsQuery
 ): Promise<PaginatedProjects> => {
-  const { page, limit, projectType, difficultyLevel, status, skills, search } =
-    query;
+  const tracker = trackOperation('project.list', undefined, {
+    page: query.page,
+    limit: query.limit,
+    projectType: query.projectType,
+    status: query.status,
+    hasSearch: !!query.search,
+  });
 
-  const skip = (page - 1) * limit;
-
-  const where: Prisma.ProjectWhereInput = {};
-
-  if (projectType) where.projectType = projectType;
-  if (difficultyLevel) where.difficultyLevel = difficultyLevel;
-  if (status) where.status = status;
-
-  if (skills) {
-    const skillsArray = skills.split(',').map((s) => s.trim());
-    where.skills = {
-      hasSome: skillsArray,
-    };
-  }
-
-  if (search) {
-    where.OR = [
-      { title: { contains: search, mode: 'insensitive' } },
-      { description: { contains: search, mode: 'insensitive' } },
-    ];
-  }
-
-  const [projects, total] = await Promise.all([
-    prisma.project.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: projectInclude,
-    }),
-    prisma.project.count({ where }),
-  ]);
-
-  const totalPages = Math.ceil(total / limit);
-
-  return {
-    data: projects,
-    pagination: {
-      total,
+  try {
+    const {
       page,
       limit,
+      projectType,
+      difficultyLevel,
+      status,
+      skills,
+      search,
+    } = query;
+
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ProjectWhereInput = {};
+
+    if (projectType) where.projectType = projectType;
+    if (difficultyLevel) where.difficultyLevel = difficultyLevel;
+    if (status) where.status = status;
+
+    if (skills) {
+      const skillsArray = skills.split(',').map((s) => s.trim());
+      where.skills = {
+        hasSome: skillsArray,
+      };
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: projectInclude,
+      }),
+      prisma.project.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    tracker.success({
+      resultsCount: projects.length,
+      totalResults: total,
+      page,
       totalPages,
-      hasNextPage: page < totalPages,
-      hasPrevPage: page > 1,
-    },
-  };
+    });
+
+    return {
+      data: projects,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  } catch (error) {
+    tracker.failure(error, {
+      page: query.page,
+      limit: query.limit,
+    });
+    throw error;
+  }
 };
 
 /**
@@ -151,16 +202,37 @@ export const listProjects = async (
 export const getProjectById = async (
   projectId: string
 ): Promise<ProjectResponse> => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: projectInclude,
+  const tracker = trackOperation('project.getById', undefined, {
+    projectId,
   });
 
-  if (!project) {
-    throw new NotFoundError('Project not found');
-  }
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: projectInclude,
+    });
 
-  return project;
+    if (!project) {
+      logger.warn('Project not found', {
+        operation: 'project.getById',
+        projectId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Project not found');
+    }
+
+    tracker.success({
+      projectId: project.id,
+      title: project.title,
+      status: project.status,
+      creatorId: project.createdById,
+    });
+
+    return project;
+  } catch (error) {
+    tracker.failure(error, { projectId });
+    throw error;
+  }
 };
 
 /**
@@ -171,29 +243,58 @@ export const updateProject = async (
   userId: string,
   data: UpdateProjectInput
 ): Promise<ProjectResponse> => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const tracker = trackOperation('project.update', undefined, {
+    projectId,
+    userId,
+    fieldsUpdated: Object.keys(data).length,
   });
 
-  if (!project) {
-    throw new NotFoundError('Project not found');
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      logger.warn('Update attempted on non-existent project', {
+        operation: 'project.update',
+        projectId,
+        userId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Project not found');
+    }
+
+    if (project.createdById !== userId) {
+      logger.warn('Unauthorized project update attempt', {
+        operation: 'project.update',
+        projectId,
+        userId,
+        actualOwnerId: project.createdById,
+        outcome: 'forbidden',
+      });
+      throw new ForbiddenError(
+        'You do not have permission to update this project'
+      );
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: projectId },
+      data,
+      include: projectInclude,
+    });
+
+    tracker.success({
+      projectId: updatedProject.id,
+      title: updatedProject.title,
+      status: updatedProject.status,
+      fieldsUpdated: Object.keys(data),
+    });
+
+    return updatedProject;
+  } catch (error) {
+    tracker.failure(error, { projectId, userId });
+    throw error;
   }
-
-  if (project.createdById !== userId) {
-    throw new ForbiddenError(
-      'You do not have permission to update this project'
-    );
-  }
-
-  const updatedProject = await prisma.project.update({
-    where: { id: projectId },
-    data,
-    include: projectInclude,
-  });
-
-  logger.info(`Project updated: ${updatedProject.title}`);
-
-  return updatedProject;
 };
 
 /**
@@ -203,25 +304,52 @@ export const deleteProject = async (
   projectId: string,
   userId: string
 ): Promise<void> => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const tracker = trackOperation('project.delete', undefined, {
+    projectId,
+    userId,
   });
 
-  if (!project) {
-    throw new NotFoundError('Project not found');
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      logger.warn('Delete attempted on non-existent project', {
+        operation: 'project.delete',
+        projectId,
+        userId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('Project not found');
+    }
+
+    if (project.createdById !== userId) {
+      logger.warn('Unauthorized project delete attempt', {
+        operation: 'project.delete',
+        projectId,
+        userId,
+        actualOwnerId: project.createdById,
+        outcome: 'forbidden',
+      });
+      throw new ForbiddenError(
+        'You do not have permission to delete this project'
+      );
+    }
+
+    await prisma.project.delete({
+      where: { id: projectId },
+    });
+
+    tracker.success({
+      projectId,
+      title: project.title,
+      applicantsCount: project.currentApplicants,
+    });
+  } catch (error) {
+    tracker.failure(error, { projectId, userId });
+    throw error;
   }
-
-  if (project.createdById !== userId) {
-    throw new ForbiddenError(
-      'You do not have permission to delete this project'
-    );
-  }
-
-  await prisma.project.delete({
-    where: { id: projectId },
-  });
-
-  logger.info(`Project deleted: ${project.title}`);
 };
 
 /**
@@ -230,11 +358,25 @@ export const deleteProject = async (
 export const getMyProjects = async (
   userId: string
 ): Promise<ProjectResponse[]> => {
-  const projects = await prisma.project.findMany({
-    where: { createdById: userId },
-    orderBy: { createdAt: 'desc' },
-    include: projectInclude,
+  const tracker = trackOperation('project.getMy', undefined, {
+    userId,
   });
 
-  return projects;
+  try {
+    const projects = await prisma.project.findMany({
+      where: { createdById: userId },
+      orderBy: { createdAt: 'desc' },
+      include: projectInclude,
+    });
+
+    tracker.success({
+      userId,
+      projectsCount: projects.length,
+    });
+
+    return projects;
+  } catch (error) {
+    tracker.failure(error, { userId });
+    throw error;
+  }
 };
