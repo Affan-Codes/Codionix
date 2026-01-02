@@ -17,11 +17,9 @@ import {
 } from "@/components/ui/select";
 import { ROUTES, USER_ROLES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router";
-import { toast } from "sonner";
 import { z } from "zod";
 
 const registerSchema = z
@@ -51,18 +49,15 @@ const registerSchema = z
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function Register() {
-  const { register: registerUser } = useAuth();
+  const { register: registerUser, isLoading } = useAuth();
   const navigate = useNavigate();
-
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
 
   const {
     register,
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting: isValidating },
+    formState: { errors },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -72,16 +67,17 @@ export default function Register() {
   });
 
   const onSubmit = async (data: RegisterFormData) => {
-    await handleApiSubmit(async () => {
+    try {
       await registerUser({
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         role: data.role,
       });
-      toast.success("Account created!");
       navigate(ROUTES.DASHBOARD);
-    });
+    } catch (error) {
+      // Error already handled by mutation
+    }
   };
 
   const password = watch("password");
@@ -96,9 +92,6 @@ export default function Register() {
         special: /[!@#$%^&*(),.?":{}|<>_]/.test(password),
       }
     : null;
-
-  // Combine loading states
-  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4 py-12">

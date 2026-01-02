@@ -1,5 +1,5 @@
 import type { ApiResponse, Application } from "@/types";
-import apiClient, { invalidateCache } from "./axios";
+import apiClient from "./axios";
 
 export interface CreateApplicationInput {
   projectId: string;
@@ -16,13 +16,6 @@ export const applicationApi = {
       "/applications",
       data
     );
-
-    // CRITICAL: Invalidate multiple cache entries after application creation
-    // 1. /applications* - user's application list
-    // 2. /projects/{id} - project detail (currentApplicants count changed)
-    // 3. /projects - project list (currentApplicants count in cards)
-    invalidateCache("/applications");
-    invalidateCache("/projects");
 
     return response.data.data!;
   },
@@ -53,11 +46,6 @@ export const applicationApi = {
       `/applications/${id}/status`,
       { status, rejectionReason }
     );
-
-    // CRITICAL: Invalidate application cache after status update
-    // - /applications* - affects lists and detail views
-    // - /projects/{id}/applications - project's applicant list
-    invalidateCache("/applications");
 
     return response.data.data!;
   },

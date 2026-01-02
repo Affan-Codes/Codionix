@@ -1,4 +1,3 @@
-import { authApi } from "@/api/auth.api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -8,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ROUTES } from "@/constants";
+import { useVerifyEmail } from "@/hooks/mutations/useAuthMutations";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
@@ -20,6 +20,8 @@ export default function VerifyEmail() {
   const [state, setState] = useState<VerificationState>("verifying");
   const [message, setMessage] = useState("");
 
+  const verifyEmail = useVerifyEmail();
+
   useEffect(() => {
     const token = searchParams.get("token");
 
@@ -31,7 +33,7 @@ export default function VerifyEmail() {
 
     const verify = async () => {
       try {
-        const response = await authApi.verifyEmail(token);
+        const response = await verifyEmail.handleSubmit(token);
         setState("success");
         setMessage(response.message || "Email verified successfully!");
       } catch (error: any) {

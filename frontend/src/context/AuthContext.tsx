@@ -1,6 +1,10 @@
-import { authApi } from "@/api/auth.api";
 import { userApi } from "@/api/user.api";
 import { STORAGE_KEYS } from "@/constants";
+import {
+  useLogin,
+  useRegister,
+  useLogout as useLogoutMutation,
+} from "@/hooks/mutations/useAuthMutations";
 import type { LoginCredentials, RegisterData, User } from "@/types";
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -20,6 +24,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const loginMutation = useLogin();
+  const registerMutation = useRegister();
+  const logoutMutation = useLogoutMutation();
 
   useEffect(() => {
     const loadUser = async () => {
@@ -52,7 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (credentials: LoginCredentials) => {
-    const response = await authApi.login(credentials);
+    const response = await loginMutation.handleSubmit(credentials);
 
     setUser(response.user);
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
@@ -67,7 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const register = async (data: RegisterData) => {
-    const response = await authApi.register(data);
+    const response = await registerMutation.handleSubmit(data);
 
     setUser(response.user);
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
@@ -83,10 +91,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
-      const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-      if (refreshToken) {
-        await authApi.logout(refreshToken);
-      }
+      await logoutMutation.handleSubmit();
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
@@ -105,7 +110,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const value = {
     user,
     isAuthenticated: !!user,
-    isLoading,
+    isLoading:
+      isLoading || loginMutation.isPending || registerMutation.isPending,
     login,
     register,
     logout,

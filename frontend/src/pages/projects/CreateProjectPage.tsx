@@ -1,4 +1,3 @@
-import { projectApi } from "@/api/project.api";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
+import { useCreateProjectMutation } from "@/hooks/mutations/useProjectMutation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -62,8 +61,7 @@ export default function CreateProjectPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
 
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const createProject = useCreateProjectMutation();
 
   const {
     register,
@@ -113,44 +111,33 @@ export default function CreateProjectPage() {
       return;
     }
 
-    await handleApiSubmit(async () => {
-      const projectData = {
-        title: data.title,
-        description: data.description,
-        duration: data.duration,
-        deadline: new Date(data.deadline).toISOString(),
-        projectType: data.projectType,
-        difficultyLevel: data.difficultyLevel,
-        status: data.status,
-        isRemote: data.isRemote,
-        skills,
-        // Optional fields
-        companyName: data.companyName || undefined,
-        location: data.location || undefined,
-        // Transform to numbers
-        stipend:
-          data.stipend && data.stipend.trim()
-            ? parseFloat(data.stipend)
-            : undefined,
-        maxApplicants:
-          data.maxApplicants && data.maxApplicants.trim()
-            ? parseInt(data.maxApplicants, 10)
-            : 10,
-      };
+    const projectData = {
+      title: data.title,
+      description: data.description,
+      duration: data.duration,
+      deadline: new Date(data.deadline).toISOString(),
+      projectType: data.projectType,
+      difficultyLevel: data.difficultyLevel,
+      status: data.status,
+      isRemote: data.isRemote,
+      skills,
+      companyName: data.companyName || undefined,
+      location: data.location || undefined,
+      stipend:
+        data.stipend && data.stipend.trim()
+          ? parseFloat(data.stipend)
+          : undefined,
+      maxApplicants:
+        data.maxApplicants && data.maxApplicants.trim()
+          ? parseInt(data.maxApplicants, 10)
+          : 10,
+    };
 
-      const project = await projectApi.createProject(projectData);
-
-      toast.success("Project created successfully!", {
-        description: `"${project.title}" has been ${
-          data.status === "PUBLISHED" ? "published" : "saved as draft"
-        }.`,
-      });
-
-      navigate(`/projects/${project.id}`);
-    });
+    const project = await createProject.handleSubmit(projectData);
+    navigate(`/projects/${project.id}`);
   };
 
-  const isLoading = isValidating || isApiSubmitting;
+  const isLoading = isValidating || createProject.isPending;
 
   return (
     <Layout maxWidth="5xl">

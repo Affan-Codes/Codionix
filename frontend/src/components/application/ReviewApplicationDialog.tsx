@@ -1,8 +1,6 @@
-import { applicationApi } from "@/api/application.api";
 import type { Application } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { z } from "zod";
 import {
   Dialog,
@@ -22,7 +20,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
+import { useUpdateApplicationStatusMutation } from "@/hooks/mutations/useApplicationMutations";
 
 interface ReviewApplicationDialogProps {
   application: Application | null;
@@ -59,8 +57,7 @@ export function ReviewApplicationDialog({
   onOpenChange,
   onSuccess,
 }: ReviewApplicationDialogProps) {
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const updateStatus = useUpdateApplicationStatusMutation();
 
   const {
     register,
@@ -82,23 +79,19 @@ export function ReviewApplicationDialog({
   const onSubmit = async (data: ReviewFormData) => {
     if (!application) return;
 
-    await handleApiSubmit(async () => {
-      await applicationApi.updateApplicationStatus(
-        application.id,
-        data.status,
-        data.rejectionReason?.trim() || undefined
-      );
-
-      toast.success("Application reviewed!", {
-        description: `Application has been marked as ${data.status
-          .toLowerCase()
-          .replace("_", " ")}.`,
+    try {
+      await updateStatus.handleSubmit({
+        id: application.id,
+        status: data.status,
+        rejectionReason: data.rejectionReason?.trim() || undefined,
       });
 
       reset();
       onOpenChange(false);
       onSuccess();
-    });
+    } catch (error) {
+      // Error already handled by mutation
+    }
   };
 
   const handleClose = () => {
@@ -106,7 +99,7 @@ export function ReviewApplicationDialog({
     onOpenChange(false);
   };
 
-  const isLoading = isValidating || isApiSubmitting;
+  const isLoading = isValidating || updateStatus.isPending;
 
   if (!application) return null;
 

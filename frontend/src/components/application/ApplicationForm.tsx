@@ -1,7 +1,5 @@
-import { applicationApi } from "@/api/application.api";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { z } from "zod";
 import {
   Card,
@@ -14,7 +12,9 @@ import { Loader2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreateApplicationMutation } from "@/hooks/mutations/useApplicationMutations";
+import { queryKeys } from "@/utils/queryKeys";
 
 interface ApplicationFormProps {
   projectId: string;
@@ -38,8 +38,8 @@ export function ApplicationForm({
   projectTitle,
   onSuccess,
 }: ApplicationFormProps) {
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const queryClient = useQueryClient();
+  const createApplication = useCreateApplicationMutation();
 
   const {
     register,
@@ -58,22 +58,25 @@ export function ApplicationForm({
   const coverLetterValue = watch("coverLetter");
 
   const onSubmit = async (data: ApplicationFormData) => {
-    await handleApiSubmit(async () => {
-      await applicationApi.createApplication({
+    try {
+      await createApplication.handleSubmit({
         projectId,
         coverLetter: data.coverLetter,
         resumeUrl: data.resumeUrl || undefined,
       });
 
-      toast.success("Application submitted!", {
-        description: "You'll be notified when the project owner reviews it.",
+      // Invalidate the specific project (currentApplicants changed)
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.detail(projectId),
       });
 
       onSuccess();
-    });
+    } catch (error) {
+      // Error already handled by mutation
+    }
   };
 
-  const isLoading = isValidating || isApiSubmitting;
+  const isLoading = isValidating || createApplication.isPending;
 
   return (
     <Card>

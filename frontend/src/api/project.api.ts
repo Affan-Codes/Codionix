@@ -4,7 +4,7 @@ import type {
   PaginatedResponse,
   Project,
 } from "@/types";
-import apiClient, { invalidateCache } from "./axios";
+import apiClient from "./axios";
 
 export interface ListProjectsParams {
   page?: number;
@@ -50,11 +50,6 @@ export const projectApi = {
       data
     );
 
-    // CRITICAL: Invalidate all project-related cache after creation
-    // - /projects (list endpoint with all filters)
-    // - /projects/my-projects (creator's project list)
-    invalidateCache("/projects");
-
     return response.data.data!;
   },
 
@@ -68,22 +63,12 @@ export const projectApi = {
       data
     );
 
-    // CRITICAL: Invalidate affected cache entries
-    // - /projects (list might have this project)
-    // - /projects/{id} (detail page)
-    // - /projects/my-projects (if status changed, affects lists)
-    invalidateCache("/projects");
-
     return response.data.data!;
   },
 
   // Delete project (owner only)
   deleteProject: async (id: string): Promise<void> => {
     await apiClient.delete(`/projects/${id}`);
-
-    // CRITICAL: Invalidate all project cache
-    // Project no longer exists, must clear from all lists
-    invalidateCache("/projects");
   },
 
   // Get project applications (owner only)

@@ -14,8 +14,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
 
 const loginSchema = z.object({
   email: z.email("Invalid email address").min(1, "Email is required"),
@@ -25,32 +23,26 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, isLoading } = useAuth();
   const navigate = useNavigate();
-
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
 
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting: isValidating },
+    formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     mode: "onBlur",
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    await handleApiSubmit(async () => {
+    try {
       await login(data);
-      toast.success("Welcome back!", {
-        description: "You have successfully signed in.",
-      });
       navigate(ROUTES.DASHBOARD);
-    });
+    } catch (error) {
+      // Error already handled by mutation
+    }
   };
-
-  const isLoading = isValidating || isApiSubmitting;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">

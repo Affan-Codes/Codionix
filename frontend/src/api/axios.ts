@@ -5,164 +5,10 @@ import axios, { type InternalAxiosRequestConfig } from "axios";
 // TYPE EXTENSIONS
 // ===================================
 
-/**
- * Extend Axios config to support custom metadata
- * Used for tracking request deduplication keys and retry counts
- */
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
-  metadata?: {
-    requestKey: string;
-  };
   _retry?: boolean;
   _retryCount?: number;
 }
-
-// ===================================
-// REQUEST DEDUPLICATION
-// ===================================
-
-/**
- * Track in-flight requests to prevent duplicate API calls
- *
- * Problem: Without this, navigating /projects/123 → /projects → /projects/123
- * triggers duplicate GET /projects/123 calls if done quickly.
- *
- * Solution: Store pending requests by URL+method. If same request is made
- * while previous is still pending, return the same Promise.
- *
- * CRITICAL: Only dedupe GET requests. POST/PUT/DELETE must always execute.
- */
-interface PendingRequest {
-  promise: Promise<any>;
-  timestamp: number;
-}
-
-const pendingRequests = new Map<string, PendingRequest>();
-
-/**
- * Generate unique key for request deduplication
- * Format: METHOD:URL?params
- */
-const getRequestKey = (config: CustomAxiosRequestConfig): string => {
-  const params = config.params
-    ? `?${new URLSearchParams(config.params).toString()}`
-    : "";
-  return `${config.method?.toUpperCase()}:${config.url}${params}`;
-};
-
-/**
- * Check if request is dedupeable (only GET requests)
- */
-const isDedupeable = (config: CustomAxiosRequestConfig): boolean => {
-  return config.method?.toUpperCase() === "GET";
-};
-
-/**
- * Clean up stale pending requests (older than 30 seconds)
- * Prevents memory leaks from abandoned requests
- */
-const cleanupStalePendingRequests = () => {
-  const now = Date.now();
-  const STALE_THRESHOLD = 30000; // 30 seconds
-
-  for (const [key, request] of pendingRequests.entries()) {
-    if (now - request.timestamp > STALE_THRESHOLD) {
-      pendingRequests.delete(key);
-    }
-  }
-};
-
-// Run cleanup every 60 seconds
-setInterval(cleanupStalePendingRequests, 60000);
-
-// ===================================
-// SIMPLE CACHE
-// ===================================
-
-/**
- * In-memory cache for GET requests
- *
- * Strategy: Cache successful GET responses for 5 minutes
- * - Reduces redundant API calls for frequently accessed data
- * - Improves UX on slow connections
- * - Zero external dependencies
- *
- * Trade-offs:
- * - Data can be stale for up to 5 minutes
- * - Cache cleared on page refresh (acceptable for MVP)
- * - No cross-tab synchronization (acceptable for MVP)
- *
- * Future: Replace with React Query for sophisticated caching
- */
-interface CacheEntry {
-  data: any;
-  timestamp: number;
-}
-
-const cache = new Map<string, CacheEntry>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-/**
- * Get cached response if valid
- */
-const getCachedResponse = (key: string): any | null => {
-  const entry = cache.get(key);
-  if (!entry) return null;
-
-  const age = Date.now() - entry.timestamp;
-  if (age > CACHE_TTL) {
-    cache.delete(key);
-    return null;
-  }
-
-  return entry.data;
-};
-
-/**
- * Store response in cache
- */
-const setCachedResponse = (key: string, data: any): void => {
-  cache.set(key, {
-    data,
-    timestamp: Date.now(),
-  });
-};
-
-/**
- * Invalidate cache entries matching pattern
- *
- * Example: After creating project, invalidate GET:/projects*
- */
-export const invalidateCache = (pattern?: string): void => {
-  if (!pattern) {
-    // Clear entire cache
-    cache.clear();
-    return;
-  }
-
-  // Clear matching entries
-  for (const key of cache.keys()) {
-    if (key.includes(pattern)) {
-      cache.delete(key);
-    }
-  }
-};
-
-/**
- * Clean up stale cache entries (older than TTL)
- */
-const cleanupStaleCache = () => {
-  const now = Date.now();
-
-  for (const [key, entry] of cache.entries()) {
-    if (now - entry.timestamp > CACHE_TTL) {
-      cache.delete(key);
-    }
-  }
-};
-
-// Run cleanup every 5 minutes
-setInterval(cleanupStaleCache, 5 * 60 * 1000);
 
 // ===================================
 // AXIOS INSTANCE
@@ -209,44 +55,6 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Check cache for GET requests
-    if (isDedupeable(config)) {
-      const key = getRequestKey(config);
-
-      // Check cache first
-      const cachedResponse = getCachedResponse(key);
-      if (cachedResponse) {
-        // Return cached data wrapped in Axios response format
-        return Promise.reject({
-          config,
-          response: {
-            data: cachedResponse,
-            status: 200,
-            statusText: "OK",
-            headers: {},
-            config,
-          },
-          isAxiosError: false,
-          isCacheHit: true, // Custom flag for debugging
-        });
-      }
-
-      // Check if request already in flight
-      const pending = pendingRequests.get(key);
-      if (pending) {
-        // Return existing promise (deduplication)
-        return Promise.reject({
-          config,
-          isDuplicate: true, // Custom flag
-          originalPromise: pending.promise,
-        });
-      }
-
-      // Mark request as in-flight
-      // We'll store the promise in response interceptor
-      config.metadata = { requestKey: key };
-    }
-
     return config;
   },
   (error) => {
@@ -259,35 +67,9 @@ apiClient.interceptors.request.use(
 // ===================================
 
 apiClient.interceptors.response.use(
-  (response) => {
-    const config = response.config as CustomAxiosRequestConfig;
-
-    // Cache successful GET responses
-    if (isDedupeable(config) && config.metadata?.requestKey) {
-      const key = config.metadata.requestKey;
-      setCachedResponse(key, response.data);
-      pendingRequests.delete(key);
-    }
-
-    return response;
-  },
+  (response) => response,
   async (error: any) => {
-    // Handle cache hits (not real errors)
-    if (error.isCacheHit) {
-      return Promise.resolve(error.response);
-    }
-
-    // Handle duplicates (return original promise)
-    if (error.isDuplicate) {
-      return error.originalPromise;
-    }
-
     const originalRequest = error.config as CustomAxiosRequestConfig;
-
-    // Clean up pending request on error
-    if (originalRequest?.metadata?.requestKey) {
-      pendingRequests.delete(originalRequest.metadata.requestKey);
-    }
 
     // ===================================
     // NETWORK ERROR HANDLING
