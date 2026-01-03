@@ -1,8 +1,9 @@
 import { applicationApi } from "@/api/application.api";
 import { projectApi, type ListProjectsParams } from "@/api/project.api";
 import { userApi } from "@/api/user.api";
+import type { User } from "@/types";
 import { queryKeys } from "@/utils/queryKeys";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 
 // ===================================
 // PROJECT QUERIES
@@ -102,12 +103,14 @@ export function useApplication(id: string, options?: { enabled?: boolean }) {
  * CRITICAL: This syncs with AuthContext
  * When user data updates here, AuthContext must also update
  */
-export function useCurrentUser() {
+export function useCurrentUser(
+  options?: Partial<UseQueryOptions<User, Error>>
+) {
   return useQuery({
     queryKey: queryKeys.user.current(),
     queryFn: () => userApi.getCurrentUser(),
     staleTime: 10 * 60 * 1000, // 10min - user data rarely changes
-    // Only fetch if user is authenticated
-    enabled: !!localStorage.getItem("accessToken"),
+    retry: 1, // Retry once by default
+    ...options, // Allow overrides
   });
 }

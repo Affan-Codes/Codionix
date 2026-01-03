@@ -1,18 +1,3 @@
-/**
- *  Replaces useFormSubmission with React Query mutations while preserving:
- * - Duplicate submission prevention
- * - Debouncing (1000ms minimum between attempts)
- * - Race condition safety
- * - User-friendly error messages
- * - Toast notifications
- *
- * Adds React Query benefits:
- * - Automatic cache invalidation
- * - Optimistic updates
- * - Retry capabilities
- * - DevTools visibility
- */
-
 import {
   useMutation,
   useQueryClient,

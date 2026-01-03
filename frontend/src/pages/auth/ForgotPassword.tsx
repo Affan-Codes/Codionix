@@ -1,4 +1,3 @@
-import { authApi } from "@/api/auth.api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,13 +9,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROUTES } from "@/constants";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
+import { useForgotPassword } from "@/hooks/mutations/useAuthMutations";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeftIcon, CheckCircleIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
-import { toast } from "sonner";
 import { z } from "zod";
 
 const forgotPasswordSchema = z.object({
@@ -29,9 +27,7 @@ export default function ForgotPassword() {
   const [emailSent, setEmailSent] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
 
-  // Prevent duplicate submissions
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const forgotPassword = useForgotPassword();
 
   const {
     register,
@@ -43,18 +39,13 @@ export default function ForgotPassword() {
   });
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
-    await handleApiSubmit(async () => {
-      await authApi.forgotPassword(data.email);
-      setSubmittedEmail(data.email);
-      setEmailSent(true);
-      toast.success("Reset email sent!", {
-        description: "Check your inbox for the password reset link.",
-      });
-    });
+    await forgotPassword.handleSubmit(data.email);
+    setSubmittedEmail(data.email);
+    setEmailSent(true);
   };
 
-  // Combined loading state (validation OR API call)
-  const isLoading = isValidating || isApiSubmitting;
+  // Combined loading state
+  const isLoading = isValidating || forgotPassword.isPending;
 
   if (emailSent) {
     return (

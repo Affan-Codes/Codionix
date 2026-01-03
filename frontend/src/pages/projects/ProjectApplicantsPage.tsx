@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import { useProject, useProjectApplicants } from "@/hooks/queries/useProjects";
+import { useProject, useProjectApplicants } from "@/hooks/queries/useQueries";
 import type { Application } from "@/types";
 import { ArrowLeftIcon, Loader2Icon, UsersIcon } from "lucide-react";
 import { useMemo, useState } from "react";

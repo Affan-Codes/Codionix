@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
-import { useProject } from "@/hooks/queries/useProjects";
+import { useProject } from "@/hooks/queries/useQueries";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ArrowLeftIcon,

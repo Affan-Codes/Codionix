@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import { useMyApplications } from "@/hooks/queries/useApplications";
+import { useMyApplications } from "@/hooks/queries/useQueries";
 import { FileTextIcon, Loader2Icon, SearchIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";

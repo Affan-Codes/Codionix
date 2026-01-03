@@ -1,4 +1,3 @@
-import { authApi } from "@/api/auth.api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,13 +9,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROUTES } from "@/constants";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
+import { useResetPassword } from "@/hooks/mutations/useAuthMutations";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useSearchParams } from "react-router";
-import { toast } from "sonner";
 import { z } from "zod";
 
 const resetPasswordSchema = z
@@ -45,8 +43,7 @@ export default function ResetPassword() {
 
   const token = searchParams.get("token");
 
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const resetPassword = useResetPassword();
 
   const {
     register,
@@ -77,29 +74,24 @@ export default function ResetPassword() {
       return;
     }
 
-    await handleApiSubmit(async () => {
-      try {
-        await authApi.resetPassword(token, data.password);
-        setResetSuccess(true);
-        toast.success("Password reset successful!", {
-          description: "You can now log in with your new password.",
-        });
+    try {
+      await resetPassword.handleSubmit({ token, password: data.password });
+      setResetSuccess(true);
 
-        // Redirect to login after 2 seconds
-        setTimeout(() => {
-          navigate(ROUTES.LOGIN);
-        }, 2000);
-      } catch (error: any) {
-        // If token is invalid/expired, show error state
-        if (error.response?.status === 401) {
-          setInvalidToken(true);
-        }
-        throw error; // Re-throw for useFormSubmission to handle
+      // Redirect to login after 2 seconds
+      setTimeout(() => {
+        navigate(ROUTES.LOGIN);
+      }, 2000);
+    } catch (error: any) {
+      // If token is invalid/expired, show error state
+      if (error.response?.status === 401) {
+        setInvalidToken(true);
       }
-    });
+      // Error toast already shown by mutation
+    }
   };
 
-  const isLoading = isValidating || isApiSubmitting;
+  const isLoading = isValidating || resetPassword.isPending;
 
   // Invalid/Missing Token State
   if (!token || invalidToken) {

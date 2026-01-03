@@ -1,4 +1,3 @@
-import { authApi } from "@/api/auth.api";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,15 +8,15 @@ import {
 } from "@/components/ui/card";
 import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
+import { useResendVerification } from "@/hooks/mutations/useAuthMutations";
 import { Loader2Icon, MailIcon } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
 
 const VerificationPending = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [isResending, setIsResending] = useState(false);
+
+  const resendVerification = useResendVerification();
 
   // Redirect if user is already verified
   if (user?.isEmailVerified) {
@@ -26,23 +25,7 @@ const VerificationPending = () => {
   }
 
   const handleResend = async () => {
-    setIsResending(true);
-    try {
-      const response = await authApi.resendVerificationEmail();
-      toast.success("Verification email sent!", {
-        description:
-          response.message || "Check your inbox for the verification link.",
-      });
-    } catch (error: any) {
-      const errorMessage =
-        error.response?.data?.error?.message ||
-        "Failed to resend verification email";
-      toast.error("Resend failed", {
-        description: errorMessage,
-      });
-    } finally {
-      setIsResending(false);
-    }
+    await resendVerification.handleSubmit();
   };
 
   const handleLogout = async () => {
@@ -92,11 +75,11 @@ const VerificationPending = () => {
             </p>
             <Button
               onClick={handleResend}
-              disabled={isResending}
+              disabled={resendVerification.isPending}
               variant="outline"
               className="w-full"
             >
-              {isResending ? (
+              {resendVerification.isPending ? (
                 <>
                   <Loader2Icon className="h-4 w-4 animate-spin" />
                   Sending...

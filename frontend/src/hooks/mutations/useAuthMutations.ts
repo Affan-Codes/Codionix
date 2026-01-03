@@ -2,6 +2,7 @@ import type { LoginCredentials, RegisterData } from "@/types";
 import { useMutationFactory } from "../useMutationFactory";
 import { authApi } from "@/api/auth.api";
 import { STORAGE_KEYS } from "@/constants";
+import { queryKeys } from "@/utils/queryKeys";
 
 /**
  * Login mutation
@@ -10,6 +11,7 @@ export function useLogin() {
   return useMutationFactory({
     mutationFn: (credentials: LoginCredentials) => authApi.login(credentials),
     successMessage: "Welcome back!",
+    invalidateKeys: [queryKeys.user.current()],
     getErrorMessage: (error: any) => {
       if (error?.response?.status === 401) {
         return "Invalid email or password";
@@ -25,9 +27,8 @@ export function useLogin() {
 export function useRegister() {
   return useMutationFactory({
     mutationFn: (data: RegisterData) => authApi.register(data),
-
     successMessage: "Account created successfully!",
-
+    invalidateKeys: [queryKeys.user.current()],
     getErrorMessage: (error: any) => {
       if (error?.response?.status === 409) {
         return "An account with this email already exists";

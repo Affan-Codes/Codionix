@@ -1,4 +1,3 @@
-import { projectApi } from "@/api/project.api";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ROUTES } from "@/constants";
-import { useFormSubmission } from "@/hooks/useFormSubmission";
-import type { Project } from "@/types";
+import {
+  useDeleteProjectMutation,
+  useUpdateProjectMutation,
+} from "@/hooks/mutations/useProjectMutation";
+import { useProject } from "@/hooks/queries/useQueries";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, TrashIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -61,16 +63,18 @@ type EditProjectFormData = z.infer<typeof editProjectSchema>;
 export default function EditProjectPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<Project | null>(null);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
 
-  const { isSubmitting: isApiSubmitting, handleSubmit: handleApiSubmit } =
-    useFormSubmission();
+  const {
+    data: project,
+    isLoading: isInitialLoading,
+    isError,
+    error,
+  } = useProject(id || "", { enabled: !!id });
 
-  const { isSubmitting: isDeleting, handleSubmit: handleDelete } =
-    useFormSubmission();
+  const updateProject = useUpdateProjectMutation();
+  const deleteProject = useDeleteProjectMutation();
 
   const {
     register,
@@ -90,46 +94,28 @@ export default function EditProjectPage() {
       return;
     }
 
-    const fetchProject = async () => {
-      setIsInitialLoading(true);
-      try {
-        const data = await projectApi.getProjectById(id);
-        setProject(data);
-        setSkills(data.skills);
+    if (project) {
+      setSkills(project.skills);
 
-        // Format deadline for input type="date" (YYYY-MM-DD)
-        const deadlineDate = new Date(data.deadline);
-        const formattedDeadline = deadlineDate.toISOString().split("T")[0];
+      const deadlineDate = new Date(project.deadline);
+      const formattedDeadline = deadlineDate.toISOString().split("T")[0];
 
-        // Reset form with fetched data
-        reset({
-          title: data.title,
-          description: data.description,
-          duration: data.duration,
-          deadline: formattedDeadline,
-          projectType: data.projectType,
-          difficultyLevel: data.difficultyLevel,
-          status: data.status,
-          isRemote: data.isRemote,
-          companyName: data.companyName || "",
-          location: data.location || "",
-          stipend: data.stipend?.toString() || "",
-          maxApplicants: data.maxApplicants?.toString() || "10",
-        });
-      } catch (error: any) {
-        console.error("Failed to fetch project:", error);
-        toast.error("Failed to load project", {
-          description:
-            error.response?.data?.error?.message || "Project not found",
-        });
-        navigate(ROUTES.PROJECTS);
-      } finally {
-        setIsInitialLoading(false);
-      }
-    };
-
-    fetchProject();
-  }, [id, navigate, reset]);
+      reset({
+        title: project.title,
+        description: project.description,
+        duration: project.duration,
+        deadline: formattedDeadline,
+        projectType: project.projectType,
+        difficultyLevel: project.difficultyLevel,
+        status: project.status,
+        isRemote: project.isRemote,
+        companyName: project.companyName || "",
+        location: project.location || "",
+        stipend: project.stipend?.toString() || "",
+        maxApplicants: project.maxApplicants?.toString() || "10",
+      });
+    }
+  }, [id, navigate, reset, project]);
 
   // Handle skill addition
   const handleAddSkill = () => {
@@ -163,39 +149,36 @@ export default function EditProjectPage() {
       return;
     }
 
-    await handleApiSubmit(async () => {
-      const projectData = {
-        title: data.title,
-        description: data.description,
-        duration: data.duration,
-        deadline: new Date(data.deadline).toISOString(),
-        projectType: data.projectType,
-        difficultyLevel: data.difficultyLevel,
-        status: data.status,
-        isRemote: data.isRemote,
-        skills,
-        // Optional fields
-        companyName: data.companyName || undefined,
-        location: data.location || undefined,
-        // Transform to numbers
-        stipend:
-          data.stipend && data.stipend.trim()
-            ? parseFloat(data.stipend)
-            : undefined,
-        maxApplicants:
-          data.maxApplicants && data.maxApplicants.trim()
-            ? parseInt(data.maxApplicants, 10)
-            : undefined,
-      };
+    const projectData = {
+      title: data.title,
+      description: data.description,
+      duration: data.duration,
+      deadline: new Date(data.deadline).toISOString(),
+      projectType: data.projectType,
+      difficultyLevel: data.difficultyLevel,
+      status: data.status,
+      isRemote: data.isRemote,
+      skills,
+      // Optional fields
+      companyName: data.companyName || undefined,
+      location: data.location || undefined,
+      // Transform to numbers
+      stipend:
+        data.stipend && data.stipend.trim()
+          ? parseFloat(data.stipend)
+          : undefined,
+      maxApplicants:
+        data.maxApplicants && data.maxApplicants.trim()
+          ? parseInt(data.maxApplicants, 10)
+          : undefined,
+    };
 
-      const updatedProject = await projectApi.updateProject(id, projectData);
-
-      toast.success("Project updated successfully!", {
-        description: `"${updatedProject.title}" has been updated.`,
-      });
-
-      navigate(`/projects/${id}`);
+    const updatedProject = await updateProject.handleSubmit({
+      id,
+      data: projectData,
     });
+
+    navigate(`/projects/${updatedProject.id}`);
   };
 
   // Handle project deletion
@@ -208,14 +191,35 @@ export default function EditProjectPage() {
 
     if (!confirmed) return;
 
-    await handleDelete(async () => {
-      await projectApi.deleteProject(id);
-      toast.success("Project deleted successfully");
-      navigate(ROUTES.PROJECTS);
-    });
+    await deleteProject.handleSubmit(id);
+    navigate(ROUTES.PROJECTS);
   };
 
-  const isLoading = isApiSubmitting || isDeleting || isValidating;
+  const isLoading =
+    updateProject.isPending || deleteProject.isPending || isValidating;
+
+  // Error state
+  if (isError) {
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-100 mb-4">
+            <TrashIcon className="h-8 w-8 text-red-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Failed to load project
+          </h3>
+          <p className="text-gray-600 mb-4">
+            {(error as any)?.response?.data?.error?.message ||
+              "Project not found"}
+          </p>
+          <Button onClick={() => navigate(ROUTES.PROJECTS)}>
+            Back to Projects
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
 
   if (isInitialLoading) {
     return (
@@ -247,7 +251,7 @@ export default function EditProjectPage() {
             onClick={handleDeleteProject}
             disabled={isLoading}
           >
-            {isDeleting ? (
+            {deleteProject.isPending ? (
               <>
                 <Loader2Icon className="h-4 w-4 animate-spin" />
                 Deleting...

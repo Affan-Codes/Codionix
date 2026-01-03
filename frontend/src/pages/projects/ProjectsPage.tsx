@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/pagination";
 import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
-import { useProjects } from "@/hooks/queries/useProjects";
+import { useProjects } from "@/hooks/queries/useQueries";
 import type { Project } from "@/types";
 import { Loader2Icon, PlusCircleIcon } from "lucide-react";
 import { useState } from "react";
