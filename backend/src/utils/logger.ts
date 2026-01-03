@@ -43,6 +43,12 @@ export interface LogContext {
   ip?: string;
   userAgent?: string;
 
+  // Request/Response context
+  query?: any;
+  body?: any;
+  headers?: any;
+  responseBody?: any;
+
   // Error context
   errorId?: string;
   errorCode?: string;
@@ -326,4 +332,62 @@ export function logExternalCall(
     success,
     category: 'external_api',
   });
+}
+
+/**
+ * Log HTTP request (for request/response logging middleware)
+ *
+ * Usage:
+ * logHttpRequest(req, { body: sanitizedBody, headers: sanitizedHeaders })
+ */
+export function logHttpRequest(req: Request, context?: LogContext): void {
+  const requestContext = mergeContext(getLogContext(req), context, {
+    category: 'http',
+    direction: 'inbound',
+  });
+
+  logger.info('Incoming request', requestContext);
+}
+
+/**
+ * Log HTTP response (for request/response logging middleware)
+ *
+ * Usage:
+ * logHttpResponse(req, res, duration, { responseBody: sanitized })
+ */
+export function logHttpResponse(
+  req: Request,
+  statusCode: number,
+  durationMs: number,
+  context?: LogContext
+): void {
+  let level: 'info' | 'warn' | 'error' = 'info';
+  if (statusCode >= 500) {
+    level = 'error';
+  } else if (statusCode >= 400) {
+    level = 'warn';
+  }
+
+  const responseContext = mergeContext(getLogContext(req), context, {
+    statusCode,
+    duration: `${durationMs}ms`,
+    durationMs,
+    category: 'http',
+    direction: 'outbound',
+  });
+
+  logger.log(level, 'Request completed', responseContext);
+
+  // Separate warning for slow requests
+  if (durationMs > 3000) {
+    logger.warn('Slow request detected', {
+      correlationId: req.correlationId,
+      method: req.method,
+      path: req.path,
+      duration: `${durationMs}ms`,
+      durationMs,
+      threshold: '3000ms',
+      category: 'performance',
+    });
+  }
 }

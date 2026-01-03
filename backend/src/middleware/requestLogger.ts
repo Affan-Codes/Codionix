@@ -43,68 +43,76 @@ export const requestCorrelation = (
   // Add to response headers so client can reference it
   res.setHeader('X-Correlation-ID', correlationId);
 
-  // Log incoming request with structured context
+  // Sanitize request body for logging
+  const sanitizedBody = sanitizeRequestBody(req.body);
+
+  // Log incoming request with FULL structured context
   logger.info('Incoming request', {
     correlationId,
     method: req.method,
     path: req.path,
     query: Object.keys(req.query).length > 0 ? req.query : undefined,
+    body: sanitizedBody.length > 0 ? sanitizedBody : undefined,
+    headers: sanitizeHeaders(req.headers),
     ip: req.ip || req.socket.remoteAddress,
     userAgent: req.headers['user-agent'],
     category: 'http',
     direction: 'inbound',
   });
 
-  // Capture response finish event
-  const originalEnd = res.end;
-
-  res.end = function (chunk?: any, encoding?: any, callback?: any): any {
-    // Calculate request duration
-    const duration = req.startTime ? Date.now() - req.startTime : 0;
-
-    // Determine log level based on status code
-    let level: 'info' | 'warn' | 'error' = 'info';
-    if (res.statusCode >= 500) {
-      level = 'error';
-    } else if (res.statusCode >= 400) {
-      level = 'warn';
-    }
-
-    // Log response with full structured context
-    logger.log(level, 'Request completed', {
-      correlationId,
-      method: req.method,
-      path: req.path,
-      statusCode: res.statusCode,
-      duration: `${duration}ms`,
-      durationMs: duration,
-      userId: req.user?.userId,
-      userEmail: req.user?.email,
-      userRole: req.user?.role,
-      category: 'http',
-      direction: 'outbound',
-      // Add performance warning if slow
-      ...(duration > 3000 && { performance: 'slow' }),
-    });
-
-    // Warn on slow requests (>3 seconds)
-    if (duration > 3000) {
-      logger.warn('Slow request detected', {
-        correlationId,
-        method: req.method,
-        path: req.path,
-        duration: `${duration}ms`,
-        durationMs: duration,
-        threshold: '3000ms',
-        category: 'performance',
-      });
-    }
-
-    // Call original end function
-    return originalEnd.call(this, chunk, encoding, callback);
-  };
-
   next();
+};
+
+/**
+ * Sanitize request body for logging
+ * CRITICAL: Never log sensitive fields like passwords, tokens, credit cards
+ */
+const sanitizeRequestBody = (body: any): any => {
+  if (!body || typeof body !== 'object') return body;
+
+  const sanitized = { ...body };
+  const sensitiveFields = [
+    'password',
+    'passwordHash',
+    'token',
+    'accessToken',
+    'refreshToken',
+    'secret',
+    'apiKey',
+    'creditCard',
+    'ssn',
+    'cvv',
+  ];
+
+  for (const field of sensitiveFields) {
+    if (field in sanitized) {
+      sanitized[field] = '***REDACTED***';
+    }
+  }
+
+  return sanitized;
+};
+
+/**
+ * Sanitize headers for logging
+ * CRITICAL: Never log Authorization headers or sensitive data
+ */
+const sanitizeHeaders = (headers: any): any => {
+  const sanitized = { ...headers };
+  const sensitiveHeaders = [
+    'authorization',
+    'cookie',
+    'x-api-key',
+    'x-auth-token',
+  ];
+
+  for (const header of sensitiveHeaders) {
+    if (header in sanitized) {
+      sanitized[header] = '***REDACTED***';
+    }
+  }
+
+  return sanitized;
 };
 
 /**

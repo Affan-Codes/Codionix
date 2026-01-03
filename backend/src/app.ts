@@ -8,11 +8,15 @@ import { notFoundHandler } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import routes from './routes/index.routes.js';
 import { requestCorrelation } from './middleware/requestLogger.js';
+import { responseLogger } from './middleware/responseLogger.js';
 
 const app = express();
 
 // This ensures every request has a correlation ID
 app.use(requestCorrelation);
+
+// Intercepts response to log outgoing data
+app.use(responseLogger);
 
 // Security middleware
 app.use(helmet());
