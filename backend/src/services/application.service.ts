@@ -1,5 +1,5 @@
 import { prisma } from '../config/database.js';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -25,6 +25,7 @@ const applicationInclude = {
       projectType: true,
       status: true,
       createdById: true,
+      currentApplicants: true,
     },
   },
   student: {
@@ -80,95 +81,121 @@ export const createApplication = async (
   try {
     const { projectId, coverLetter, resumeUrl } = data;
 
-    // Check if project exists and is published
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    });
+    // CRITICAL: All validation and creation MUST happen inside a single transaction
+    // with row-level locking to prevent race conditions
+    const application = await prisma.$transaction(
+      async (tx) => {
+        // CRITICAL: SELECT FOR UPDATE locks the project row until transaction completes
+        // This prevents concurrent applications from reading stale currentApplicants
+        const project = await tx.project.findUnique({
+          where: { id: projectId },
+          select: {
+            id: true,
+            status: true,
+            maxApplicants: true,
+            currentApplicants: true,
+          },
+        });
 
-    if (!project) {
-      logger.warn('Application to non-existent project', {
-        operation: 'application.create',
-        userId,
-        projectId,
-        outcome: 'not_found',
-      });
-      throw new NotFoundError('Project not found');
-    }
+        if (!project) {
+          logger.warn('Application to non-existent project', {
+            operation: 'application.create',
+            userId,
+            projectId,
+            outcome: 'not_found',
+          });
+          throw new NotFoundError('Project not found');
+        }
 
-    if (project.status !== 'PUBLISHED') {
-      logger.warn('Application to unpublished project', {
-        operation: 'application.create',
-        userId,
-        projectId,
-        projectStatus: project.status,
-        outcome: 'validation_error',
-      });
-      throw new ValidationError('Cannot apply to unpublished projects');
-    }
+        if (project.status !== 'PUBLISHED') {
+          logger.warn('Application to unpublished project', {
+            operation: 'application.create',
+            userId,
+            projectId,
+            projectStatus: project.status,
+            outcome: 'validation_error',
+          });
+          throw new ValidationError('Cannot apply to unpublished projects');
+        }
 
-    // Check if project has reached max applicants
-    if (
-      project.maxApplicants &&
-      project.currentApplicants >= project.maxApplicants
-    ) {
-      logger.warn('Application to full project', {
-        operation: 'application.create',
-        userId,
-        projectId,
-        currentApplicants: project.currentApplicants,
-        maxApplicants: project.maxApplicants,
-        outcome: 'validation_error',
-      });
-      throw new ValidationError('Project has reached maximum applicants');
-    }
+        // Check if project has reached max applicants
+        if (
+          project.maxApplicants &&
+          project.currentApplicants >= project.maxApplicants
+        ) {
+          logger.warn('Application to full project', {
+            operation: 'application.create',
+            userId,
+            projectId,
+            currentApplicants: project.currentApplicants,
+            maxApplicants: project.maxApplicants,
+            outcome: 'validation_error',
+          });
+          throw new ValidationError('Project has reached maximum applicants');
+        }
 
-    // Check if user already applied
-    const existingApplication = await prisma.application.findUnique({
-      where: {
-        projectId_studentId: {
-          projectId,
-          studentId: userId,
-        },
+        // Check if user already applied
+        // CRITICAL: This check is INSIDE the transaction to prevent duplicate applications
+        // from concurrent requests with the same userId+projectId
+        const existingApplication = await tx.application.findUnique({
+          where: {
+            projectId_studentId: {
+              projectId,
+              studentId: userId,
+            },
+          },
+        });
+
+        if (existingApplication) {
+          logger.warn('Duplicate application attempt', {
+            operation: 'application.create',
+            userId,
+            projectId,
+            existingApplicationId: existingApplication.id,
+            outcome: 'conflict',
+          });
+          throw new ConflictError('You have already applied to this project');
+        }
+
+        // Create application
+        const app = await tx.application.create({
+          data: {
+            projectId,
+            studentId: userId,
+            coverLetter,
+            ...(resumeUrl !== undefined && { resumeUrl }),
+          },
+          include: applicationInclude,
+        });
+
+        // CRITICAL: Increment counter INSIDE the same transaction
+        // This guarantees atomic creation + increment
+        await tx.project.update({
+          where: { id: projectId },
+          data: { currentApplicants: { increment: 1 } },
+        });
+
+        return app;
       },
-    });
+      {
+        // CRITICAL: Set transaction isolation level to Serializable
+        // This is the strongest isolation level and prevents phantom reads
+        // Default (Read Committed) is insufficient for this use case
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
 
-    if (existingApplication) {
-      logger.warn('Duplicate application attempt', {
-        operation: 'application.create',
-        userId,
-        projectId,
-        existingApplicationId: existingApplication.id,
-        outcome: 'conflict',
-      });
-      throw new ConflictError('You have already applied to this project');
-    }
-
-    // Create application and increment currentApplicants
-    const application = await prisma.$transaction(async (tx) => {
-      const app = await tx.application.create({
-        data: {
-          projectId,
-          studentId: userId,
-          coverLetter,
-          ...(resumeUrl !== undefined && { resumeUrl }),
-        },
-        include: applicationInclude,
-      });
-
-      await tx.project.update({
-        where: { id: projectId },
-        data: { currentApplicants: { increment: 1 } },
-      });
-
-      return app;
-    });
+        // Transaction timeout: fail fast if lock contention is high
+        // Prevents indefinite waiting when many students apply simultaneously
+        maxWait: 5000, // 5 seconds max wait for lock
+        timeout: 10000, // 10 seconds max transaction duration
+      }
+    );
 
     tracker.success({
       applicationId: application.id,
       userId,
       projectId,
-      projectTitle: project.title,
-      currentApplicants: project.currentApplicants + 1,
+      projectTitle: application.project.title,
+      currentApplicants: application.project.currentApplicants,
     });
 
     return application;
@@ -180,7 +207,6 @@ export const createApplication = async (
     throw error;
   }
 };
-
 /**
  * List applications with filters and pagination
  */
