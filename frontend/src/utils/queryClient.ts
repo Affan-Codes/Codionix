@@ -44,7 +44,15 @@ export const queryClient = new QueryClient({
       gcTime: 10 * 60 * 1000, // 10 minutes
 
       // Refetch when user returns to window/tab
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: (query) => {
+        // Skip refetch for fresh data
+        const dataUpdatedAt = query.state.dataUpdatedAt;
+        const now = Date.now();
+        const age = now - dataUpdatedAt;
+        const isStale = age >= 5 * 60 * 1000; // 5 minutes
+
+        return isStale;
+      },
 
       // Refetch when user reconnects to internet
       refetchOnReconnect: true,

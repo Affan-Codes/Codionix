@@ -19,8 +19,10 @@ import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
 import { useProjects } from "@/hooks/queries/useQueries";
 import type { Project } from "@/types";
+import { queryClient } from "@/utils/queryClient";
+import { queryKeys } from "@/utils/queryKeys";
 import { Loader2Icon, PlusCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -29,7 +31,6 @@ export default function ProjectsPage() {
   const navigate = useNavigate();
 
   // State
-
   const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState<FilterState>({
     search: "",
@@ -69,6 +70,34 @@ export default function ProjectsPage() {
 
   const projects = data?.data || [];
   const pagination = data?.pagination;
+
+  const prefetchPage = useCallback(
+    (pageNumber: number) => {
+      const prefetchParams = { ...queryParams, page: pageNumber };
+
+      queryClient.ensureQueryData({
+        queryKey: queryKeys.projects.list(prefetchParams),
+        queryFn: async () => {
+          const { projectApi } = await import("@/api/project.api");
+          return projectApi.listProjects(prefetchParams);
+        },
+        staleTime: 5 * 60 * 1000,
+      });
+    },
+    [queryClient, queryParams]
+  );
+
+  const handlePrefetchNext = useCallback(() => {
+    if (pagination?.hasNextPage) {
+      prefetchPage(currentPage + 1);
+    }
+  }, [pagination?.hasNextPage, currentPage, prefetchPage]);
+
+  const handlePrefetchPrevious = useCallback(() => {
+    if (pagination?.hasPrevPage) {
+      prefetchPage(currentPage - 1);
+    }
+  }, [pagination?.hasPrevPage, currentPage, prefetchPage]);
 
   // Handle filter changes
   const handleFilterChange = (newFilters: FilterState) => {
@@ -232,6 +261,8 @@ export default function ProjectsPage() {
                           pagination.hasPrevPage &&
                           handlePageChange(currentPage - 1)
                         }
+                        onMouseEnter={handlePrefetchPrevious}
+                        onFocus={handlePrefetchPrevious}
                         className={
                           !pagination.hasPrevPage
                             ? "pointer-events-none opacity-50"
@@ -303,6 +334,8 @@ export default function ProjectsPage() {
                             <PaginationLink
                               onClick={() => handlePageChange(pageNum)}
                               isActive={pageNum === currentPage}
+                              onMouseEnter={() => prefetchPage(pageNum)}
+                              onFocus={() => prefetchPage(pageNum)}
                               className="cursor-pointer"
                             >
                               {pageNum}
@@ -318,6 +351,8 @@ export default function ProjectsPage() {
                           pagination.hasNextPage &&
                           handlePageChange(currentPage + 1)
                         }
+                        onMouseEnter={handlePrefetchNext}
+                        onFocus={handlePrefetchNext}
                         className={
                           !pagination.hasNextPage
                             ? "pointer-events-none opacity-50"
