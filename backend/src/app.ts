@@ -9,11 +9,15 @@ import { errorHandler } from './middleware/errorHandler.js';
 import routes from './routes/index.routes.js';
 import { requestCorrelation } from './middleware/requestLogger.js';
 import { responseLogger } from './middleware/responseLogger.js';
+import { requestTrackerMiddleware } from './middleware/requestTracker.js';
 
 const app = express();
 
 // This ensures every request has a correlation ID
 app.use(requestCorrelation);
+
+// Track active requests for graceful shutdown
+app.use(requestTrackerMiddleware);
 
 // Intercepts response to log outgoing data
 app.use(responseLogger);

@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import app from './app.js';
 import { db } from './config/database.js';
+import * as requestTracker from './middleware/requestTracker.js';
 
 const PORT = env.PORT;
 
@@ -77,36 +78,72 @@ const startServer = async () => {
     });
 
     // ===================================
-    // GRACEFUL SHUTDOWN
+    // GRACEFUL SHUTDOWN WITH CONNECTION DRAINING
     // ===================================
 
     const gracefulShutdown = async (signal: string) => {
-      logger.info(`${signal} signal received: closing HTTP server`);
-
-      server.close(async () => {
-        logger.info('HTTP server closed');
-
-        try {
-          // Stop pool monitoring
-          stopPoolMonitoring();
-
-          // Close database connections
-          // CRITICAL: Must happen AFTER server stops accepting requests
-          await db.disconnect();
-
-          logger.info('Graceful shutdown complete');
-          process.exit(0);
-        } catch (error) {
-          logger.error('Error during shutdown:', error);
-          process.exit(1);
-        }
+      logger.info(`${signal} signal received: starting graceful shutdown`, {
+        category: 'shutdown',
       });
 
-      // Force shutdown after 15 seconds
-      setTimeout(() => {
-        logger.error('Forced shutdown after timeout');
+      const shutdownStartTime = Date.now();
+
+      server.close(() => {
+        logger.info('HTTP server stopped accepting new connections', {
+          category: 'shutdown',
+        });
+      });
+
+      // New requests will get 503 "Service Unavailable"
+      requestTracker.startShutdown();
+
+      try {
+        const activeRequests = requestTracker.getActiveCount();
+
+        if (activeRequests > 0) {
+          logger.info('Draining active requests...', {
+            activeRequests,
+            category: 'shutdown',
+          });
+
+          // Wait up to 30 seconds for requests to finish
+          await requestTracker.waitForDrain(30000);
+        }
+
+        stopPoolMonitoring();
+
+        await db.disconnect();
+
+        const shutdownDuration = Date.now() - shutdownStartTime;
+
+        logger.info('Graceful shutdown complete', {
+          shutdownDuration: `${shutdownDuration}ms`,
+          category: 'shutdown',
+        });
+
+        process.exit(0);
+      } catch (error) {
+        const shutdownDuration = Date.now() - shutdownStartTime;
+
+        logger.error('Error during shutdown', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          shutdownDuration: `${shutdownDuration}ms`,
+          category: 'shutdown',
+        });
+
+        // Force cleanup
+        stopPoolMonitoring();
+
+        try {
+          await db.disconnect();
+        } catch (dbError) {
+          logger.error('Failed to disconnect database during error recovery', {
+            error: dbError instanceof Error ? dbError.message : 'Unknown error',
+          });
+        }
+
         process.exit(1);
-      }, 15000);
+      }
     };
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

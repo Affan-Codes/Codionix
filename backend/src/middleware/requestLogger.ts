@@ -44,7 +44,7 @@ export const requestCorrelation = (
   res.setHeader('X-Correlation-ID', correlationId);
 
   // Sanitize request body for logging
-  const sanitizedBody = sanitizeRequestBody(req.body);
+  const sanitizedBody = req.body ? sanitizeRequestBody(req.body) : undefined;
 
   // Log incoming request with FULL structured context
   logger.info('Incoming request', {
@@ -52,7 +52,10 @@ export const requestCorrelation = (
     method: req.method,
     path: req.path,
     query: Object.keys(req.query).length > 0 ? req.query : undefined,
-    body: sanitizedBody.length > 0 ? sanitizedBody : undefined,
+    body:
+      sanitizedBody && Object.keys(sanitizedBody).length > 0
+        ? sanitizedBody
+        : undefined,
     headers: sanitizeHeaders(req.headers),
     ip: req.ip || req.socket.remoteAddress,
     userAgent: req.headers['user-agent'],
@@ -68,7 +71,7 @@ export const requestCorrelation = (
  * CRITICAL: Never log sensitive fields like passwords, tokens, credit cards
  */
 const sanitizeRequestBody = (body: any): any => {
-  if (!body || typeof body !== 'object') return body;
+  if (!body || typeof body !== 'object') return {};
 
   const sanitized = { ...body };
   const sensitiveFields = [
