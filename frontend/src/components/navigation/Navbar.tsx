@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
+import { ThemeToggle } from "../theme/ThemeToggle";
 
 interface NavLink {
   label: string;
@@ -100,6 +101,7 @@ export function Navbar() {
           {/* Desktop Navigation */}
           {isAuthenticated && (
             <div className="hidden md:flex md:items-center md:space-x-1">
+              <ThemeToggle />
               {visibleLinks.map((link) => {
                 const Icon = link.icon;
                 const isActive = isActiveLink(link.href);

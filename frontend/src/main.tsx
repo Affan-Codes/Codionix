@@ -10,23 +10,26 @@ import { NetworkStatus } from "./components/NetworkStatus.tsx";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { queryClient } from "./utils/queryClient.ts";
+import { ThemeProvider } from "./components/theme/ThemeProvider.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <NetworkStatus />
-          <RouterProvider router={router} />
-          <Toaster />
-        </AuthProvider>
+      <ThemeProvider defaultTheme="system" storageKey="codionix-ui-theme">
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <NetworkStatus />
+            <RouterProvider router={router} />
+            <Toaster />
+          </AuthProvider>
 
-        {/* React Query Devtools - ONLY shows in development */}
-        <ReactQueryDevtools
-          initialIsOpen={false}
-          buttonPosition="bottom-right"
-        />
-      </QueryClientProvider>
+          {/* React Query Devtools - ONLY shows in development */}
+          <ReactQueryDevtools
+            initialIsOpen={false}
+            buttonPosition="bottom-right"
+          />
+        </QueryClientProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>
 );
