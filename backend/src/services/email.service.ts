@@ -51,24 +51,62 @@ const createTransporter = (): nodemailer.Transporter => {
 };
 
 // Create transporter synchronously at module load
-const transporter = createTransporter();
+export const transporter = createTransporter();
+
+// ===================================
+// CORE EMAIL SENDER (BLOCKING)
+// ===================================
+
+/**
+ * Send email synchronously (for queue processing)
+ * THROWS on failure (queue will handle retry)
+ */
+export const sendEmailSync = async ({
+  to,
+  subject,
+  html,
+}: SendEmailParams): Promise<void> => {
+  const startTime = Date.now();
+
+  try {
+    const info = await transporter.sendMail({
+      from: env.EMAIL_FROM || '"Codionix" <noreply@codionix.com>',
+      to,
+      subject,
+      html,
+    });
+
+    const duration = Date.now() - startTime;
+
+    logExternalCall('email', 'sendMail', duration, true, {
+      recipient: to,
+      subject,
+      messageId: info.messageId,
+      category: 'email',
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    logExternalCall('email', 'sendMail', duration, false, {
+      recipient: to,
+      subject,
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      category: 'email',
+    });
+
+    throw error;
+  }
+};
 
 // ===================================
 // NON-BLOCKING EMAIL SENDER
 // ===================================
 
-/**
- * Send email in background (non-blocking)
- * CRITICAL: Uses setImmediate() to defer execution
- *
- * @returns void - Caller doesn't wait for result
- */
 const sendEmailAsync = async ({
   to,
   subject,
   html,
 }: SendEmailParams): Promise<void> => {
-  // Defer to next tick of event loop
   setImmediate(async () => {
     const startTime = Date.now();
 
@@ -97,21 +135,16 @@ const sendEmailAsync = async ({
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
         category: 'email',
       });
-
-      // DO NOT throw - this is fire-and-forget
-      // Email failure should not crash the app
-      // User can click "resend verification" if needed
     }
   });
 };
 
 // ===================================
-// PUBLIC API
+// EMAIL TEMPLATES
 // ===================================
 
 /**
- * Send password reset email
- * Non-blocking - returns immediately
+ * Send password reset email (Non-blocking)
  */
 export const sendPasswordResetEmail = (
   to: string,
@@ -164,8 +197,7 @@ export const sendPasswordResetEmail = (
 };
 
 /**
- * Send email verification email
- * Non-blocking - returns immediately
+ * Send email verification email (Non-blocking)
  */
 export const sendEmailVerification = (
   to: string,
@@ -232,6 +264,126 @@ export const sendEmailVerification = (
   sendEmailAsync({
     to,
     subject: 'Welcome to Codionix - Verify Your Email',
+    html,
+  });
+};
+
+/**
+ * Send application status change email (BLOCKING for queue)
+ */
+export const sendApplicationStatusEmail = async (
+  to: string,
+  recipientName: string,
+  projectTitle: string,
+  status: 'ACCEPTED' | 'REJECTED' | 'UNDER_REVIEW',
+  rejectionReason?: string
+): Promise<void> => {
+  const statusConfig = {
+    ACCEPTED: {
+      emoji: '🎉',
+      color: '#16a34a',
+      title: 'Congratulations! Your Application Was Accepted',
+      message: `Great news! Your application for "${projectTitle}" has been accepted.`,
+      cta: 'The project owner will contact you soon with next steps.',
+    },
+    REJECTED: {
+      emoji: '💭',
+      color: '#dc2626',
+      title: 'Application Update',
+      message: `Thank you for your interest in "${projectTitle}". Unfortunately, your application was not selected at this time.`,
+      cta: 'Keep exploring other opportunities on Codionix!',
+    },
+    UNDER_REVIEW: {
+      emoji: '👀',
+      color: '#2563eb',
+      title: 'Your Application is Under Review',
+      message: `The project owner is reviewing your application for "${projectTitle}".`,
+      cta: "We'll notify you once a decision is made.",
+    },
+  };
+
+  const config = statusConfig[status];
+  const dashboardUrl = `${env.FRONTEND_URL}/applications`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { text-align: center; padding: 20px; background-color: ${config.color}; color: white; border-radius: 8px 8px 0 0; }
+          .content { background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
+          .button { 
+            display: inline-block; 
+            padding: 12px 24px; 
+            background-color: ${config.color}; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            margin: 20px 0;
+          }
+          .feedback-box {
+            background-color: #fef2f2;
+            border-left: 4px solid #dc2626;
+            padding: 15px;
+            margin: 20px 0;
+          }
+          .footer { margin-top: 30px; font-size: 12px; color: #666; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1 style="margin: 0; font-size: 24px;">${config.emoji} ${config.title}</h1>
+          </div>
+          
+          <div class="content">
+            <p>Hi ${recipientName},</p>
+            
+            <p>${config.message}</p>
+            
+            ${
+              status === 'REJECTED' && rejectionReason
+                ? `
+              <div class="feedback-box">
+                <p style="margin: 0 0 10px 0;"><strong>Feedback from the project owner:</strong></p>
+                <p style="margin: 0;">${rejectionReason}</p>
+              </div>
+            `
+                : ''
+            }
+            
+            <p>${config.cta}</p>
+            
+            <div style="text-align: center;">
+              <a href="${dashboardUrl}" class="button">View My Applications</a>
+            </div>
+            
+            ${
+              status === 'REJECTED'
+                ? `
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                💡 <strong>Keep going!</strong> Every application is a learning opportunity. 
+                Review the feedback, update your profile, and apply to other projects.
+              </p>
+            `
+                : ''
+            }
+          </div>
+          
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Codionix. All rights reserved.</p>
+            <p>You received this email because your application status changed.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendEmailSync({
+    to,
+    subject: `${config.emoji} Application Update: ${projectTitle}`,
     html,
   });
 };

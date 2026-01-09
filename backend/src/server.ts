@@ -4,6 +4,10 @@ import { logger } from './utils/logger.js';
 import app from './app.js';
 import { db } from './config/database.js';
 import * as requestTracker from './middleware/requestTracker.js';
+import {
+  startEmailQueue,
+  stopEmailQueue,
+} from './services/emailQueue.service.js';
 
 const PORT = env.PORT;
 
@@ -69,6 +73,9 @@ const startServer = async () => {
     // Start pool monitoring
     startPoolMonitoring();
 
+    // Start email queue
+    startEmailQueue();
+
     // Start Express server
     const server = app.listen(PORT, () => {
       logger.info(`✅ Server running on http://localhost:${PORT}`);
@@ -110,6 +117,8 @@ const startServer = async () => {
           await requestTracker.waitForDrain(30000);
         }
 
+        await stopEmailQueue();
+
         stopPoolMonitoring();
 
         await db.disconnect();
@@ -130,6 +139,9 @@ const startServer = async () => {
           shutdownDuration: `${shutdownDuration}ms`,
           category: 'shutdown',
         });
+
+        // Force stop email queue
+        await stopEmailQueue();
 
         // Force cleanup
         stopPoolMonitoring();

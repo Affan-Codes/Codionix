@@ -12,6 +12,7 @@ import type {
   ListApplicationsQuery,
   UpdateApplicationStatusInput,
 } from '../validators/application.validator.js';
+import { enqueueApplicationStatusEmail } from './emailQueue.service.js';
 
 // ===================================
 // PRISMA TYPES
@@ -81,7 +82,6 @@ export const createApplication = async (
   try {
     const { projectId, coverLetter, resumeUrl } = data;
 
-    // CRITICAL: All validation and creation MUST happen inside a single transaction
     // with row-level locking to prevent race conditions
     const application = await prisma.$transaction(
       async (tx) => {
@@ -135,8 +135,6 @@ export const createApplication = async (
         }
 
         // Check if user already applied
-        // CRITICAL: This check is INSIDE the transaction to prevent duplicate applications
-        // from concurrent requests with the same userId+projectId
         const existingApplication = await tx.application.findUnique({
           where: {
             projectId_studentId: {
@@ -168,8 +166,6 @@ export const createApplication = async (
           include: applicationInclude,
         });
 
-        // CRITICAL: Increment counter INSIDE the same transaction
-        // This guarantees atomic creation + increment
         await tx.project.update({
           where: { id: projectId },
           data: { currentApplicants: { increment: 1 } },
@@ -207,6 +203,7 @@ export const createApplication = async (
     throw error;
   }
 };
+
 /**
  * List applications with filters and pagination
  */
@@ -329,7 +326,7 @@ export const updateApplicationStatus = async (
     // Get application with project details
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
-      include: { project: true },
+      include: { project: true, student: true },
     });
 
     if (!application) {
@@ -379,6 +376,20 @@ export const updateApplicationStatus = async (
       include: applicationInclude,
     });
 
+    if (
+      status === 'ACCEPTED' ||
+      status === 'REJECTED' ||
+      status === 'UNDER_REVIEW'
+    ) {
+      enqueueApplicationStatusEmail({
+        recipientEmail: application.student.email,
+        recipientName: application.student.fullName,
+        projectTitle: application.project.title,
+        status: status as 'ACCEPTED' | 'REJECTED' | 'UNDER_REVIEW',
+        ...(rejectionReason && { rejectionReason }),
+      });
+    }
+
     tracker.success({
       applicationId,
       previousStatus: application.status,
@@ -386,6 +397,7 @@ export const updateApplicationStatus = async (
       studentId: application.studentId,
       projectId: application.projectId,
       hasRejectionReason: !!rejectionReason,
+      emailQueued: true,
     });
 
     return updatedApplication;
