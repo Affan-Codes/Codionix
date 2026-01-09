@@ -1,13 +1,14 @@
 import type { Application } from "@/types";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
+import { Card, CardContent, CardFooter, CardHeader } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { CalendarIcon, FileTextIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  FileTextIcon,
+  CheckCircle2Icon,
+  XCircleIcon,
+  Clock,
+  Search,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "../ui/button";
 
@@ -17,102 +18,152 @@ interface ApplicantCardProps {
 }
 
 export function ApplicantCard({ application, onReview }: ApplicantCardProps) {
-  const statusColors = {
-    PENDING: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    UNDER_REVIEW: "bg-blue-100 text-blue-800 border-blue-200",
-    ACCEPTED: "bg-green-100 text-green-800 border-green-200",
-    REJECTED: "bg-red-100 text-red-800 border-red-200",
+  const statusConfig = {
+    PENDING: {
+      label: "Pending Review",
+      icon: Clock,
+      bgClass: "bg-yellow-50 dark:bg-yellow-950/20",
+      borderClass: "border-yellow-300 dark:border-yellow-800/30",
+      textClass: "text-yellow-800 dark:text-yellow-200",
+      iconClass: "text-yellow-700 dark:text-yellow-300",
+    },
+    UNDER_REVIEW: {
+      label: "Under Review",
+      icon: Search,
+      bgClass: "bg-blue-50 dark:bg-blue-950/20",
+      borderClass: "border-blue-200 dark:border-blue-900/30",
+      textClass: "text-blue-700 dark:text-blue-300",
+      iconClass: "text-blue-600 dark:text-blue-400 animate-spin",
+    },
+    ACCEPTED: {
+      label: "Accepted",
+      icon: CheckCircle2Icon,
+      bgClass: "bg-green-50 dark:bg-green-950/20",
+      borderClass: "border-green-200 dark:border-green-900/30",
+      textClass: "text-green-700 dark:text-green-300",
+      iconClass: "text-green-600 dark:text-green-400",
+    },
+    REJECTED: {
+      label: "Not Selected",
+      icon: XCircleIcon,
+      bgClass: "bg-red-50 dark:bg-red-950/20",
+      borderClass: "border-red-200 dark:border-red-900/30",
+      textClass: "text-red-700 dark:text-red-300",
+      iconClass: "text-red-600 dark:text-red-400",
+    },
   };
 
-  const statusText = {
-    PENDING: "Pending",
-    UNDER_REVIEW: "Under Review",
-    ACCEPTED: "Accepted",
-    REJECTED: "Rejected",
-  };
-
+  const config = statusConfig[application.status];
+  const StatusIcon = config.icon;
   const canReview =
     application.status === "PENDING" || application.status === "UNDER_REVIEW";
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white font-semibold text-lg">
-              {application.student?.fullName.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <CardTitle className="text-lg">
-                {application.student?.fullName}
-              </CardTitle>
-              <p className="text-sm text-gray-500">
-                {application.student?.email}
-              </p>
-            </div>
+    <Card className="h-full flex flex-col hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group border-2">
+      <CardHeader className="space-y-4 pb-4">
+        {/* Status Badge */}
+        <div
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${config.bgClass} ${config.borderClass} shadow-sm w-fit`}
+        >
+          <StatusIcon className={`size-4 ${config.iconClass}`} />
+          <span className={`text-sm font-semibold ${config.textClass}`}>
+            {config.label}
+          </span>
+        </div>
+
+        {/* Applicant Identity */}
+        <div className="flex items-center gap-4">
+          {/* Avatar */}
+          <div className="flex items-center justify-center size-14 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 text-white font-bold text-xl shadow-md shrink-0 group-hover:scale-105 transition-transform duration-200">
+            {application.student?.fullName.charAt(0).toUpperCase()}
           </div>
-          <Badge className={statusColors[application.status]} variant="outline">
-            {statusText[application.status]}
-          </Badge>
+
+          {/* Name & Email */}
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+              {application.student?.fullName}
+            </h3>
+            <p className="text-sm text-muted-foreground truncate">
+              {application.student?.email}
+            </p>
+          </div>
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 space-y-3">
+      <CardContent className="flex-1 space-y-4 pb-4">
         {/* Skills */}
         {application.student?.skills &&
           application.student.skills.length > 0 && (
-            <div>
-              <p className="text-sm text-gray-500 mb-2 font-medium">Skills:</p>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Skills
+              </p>
               <div className="flex flex-wrap gap-1.5">
-                {application.student.skills.slice(0, 5).map((skill) => (
-                  <Badge key={skill} variant="secondary" className="text-xs">
+                {application.student.skills.slice(0, 6).map((skill) => (
+                  <Badge
+                    key={skill}
+                    variant="secondary"
+                    className="text-xs font-medium"
+                  >
                     {skill}
                   </Badge>
                 ))}
-                {application.student.skills.length > 5 && (
-                  <Badge variant="secondary" className="text-xs">
-                    +{application.student.skills.length - 5}
+                {application.student.skills.length > 6 && (
+                  <Badge
+                    variant="secondary"
+                    className="text-xs font-medium bg-muted text-muted-foreground"
+                  >
+                    +{application.student.skills.length - 6}
                   </Badge>
                 )}
               </div>
             </div>
           )}
 
-        {/* Application Date */}
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <CalendarIcon className="h-4 w-4" />
-          <span>
-            Applied{" "}
-            {formatDistanceToNow(new Date(application.appliedAt), {
-              addSuffix: true,
-            })}
-          </span>
+        {/* Applied Date */}
+        <div className="flex items-center gap-3 text-sm pt-2 border-t">
+          <div className="flex items-center justify-center size-8 rounded-lg bg-muted shrink-0">
+            <CalendarIcon className="size-4 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Applied</p>
+            <p className="text-sm text-foreground">
+              {formatDistanceToNow(new Date(application.appliedAt), {
+                addSuffix: true,
+              })}
+            </p>
+          </div>
         </div>
 
         {/* Cover Letter Preview */}
-        <div className="pt-2">
-          <p className="text-sm text-gray-500 mb-1 font-medium">
-            Cover Letter:
-          </p>
-          <p className="text-sm text-gray-700 line-clamp-4">
+        <div className="pt-3 border-t">
+          <div className="flex items-center gap-2 mb-2">
+            <FileTextIcon className="size-4 text-muted-foreground" />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Cover Letter
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground line-clamp-4 leading-relaxed">
             {application.coverLetter}
           </p>
         </div>
 
-        {/* Rejection Reason */}
+        {/* Rejection Reason (if rejected) */}
         {application.status === "REJECTED" && application.rejectionReason && (
-          <div className="pt-2 border-t">
-            <p className="text-sm text-red-600 mb-1 font-medium">
-              Rejection Reason:
-            </p>
-            <p className="text-sm text-gray-700">
-              {application.rejectionReason}
-            </p>
+          <div className="pt-3 border-t">
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/20 border-2 border-red-200 dark:border-red-900/30 p-3">
+              <p className="text-xs font-semibold text-red-800 dark:text-red-300 uppercase tracking-wide mb-1">
+                Rejection Reason
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-200 leading-relaxed">
+                {application.rejectionReason}
+              </p>
+            </div>
           </div>
         )}
       </CardContent>
 
-      <CardFooter className="gap-2">
+      <CardFooter className="gap-2 pt-4 border-t">
         {application.resumeUrl && (
           <Button asChild variant="outline" className="flex-1">
             <a
@@ -120,21 +171,22 @@ export function ApplicantCard({ application, onReview }: ApplicantCardProps) {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <FileTextIcon className="h-4 w-4" />
+              <FileTextIcon className="size-4" />
               Resume
             </a>
           </Button>
         )}
 
-        {canReview && (
-          <Button onClick={() => onReview(application.id)} className="flex-1">
-            Review
+        {canReview ? (
+          <Button
+            onClick={() => onReview(application.id)}
+            className="flex-1 shadow-sm hover:shadow-md transition-all duration-200"
+          >
+            Review Application
           </Button>
-        )}
-
-        {!canReview && (
-          <Button variant="outline" className="flex-1" disabled>
-            {application.status === "ACCEPTED" ? "Accepted" : "Rejected"}
+        ) : (
+          <Button variant="secondary" className="flex-1" disabled>
+            {application.status === "ACCEPTED" ? "✓ Accepted" : "✗ Rejected"}
           </Button>
         )}
       </CardFooter>

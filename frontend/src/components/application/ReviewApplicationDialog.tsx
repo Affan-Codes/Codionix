@@ -19,7 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  Loader2Icon,
+  XCircleIcon,
+  EyeIcon,
+} from "lucide-react";
 import { useUpdateApplicationStatusMutation } from "@/hooks/mutations/useApplicationMutations";
 
 interface ReviewApplicationDialogProps {
@@ -103,28 +108,55 @@ export function ReviewApplicationDialog({
 
   if (!application) return null;
 
+  const statusOptions = [
+    {
+      value: "UNDER_REVIEW",
+      label: "Mark as Under Review",
+      icon: EyeIcon,
+      gradient: "from-blue-500 to-indigo-500",
+      description: "Still evaluating this candidate",
+    },
+    {
+      value: "ACCEPTED",
+      label: "Accept Application",
+      icon: CheckCircle2Icon,
+      gradient: "from-green-500 to-emerald-500",
+      description: "Move forward with this candidate",
+    },
+    {
+      value: "REJECTED",
+      label: "Reject Application",
+      icon: XCircleIcon,
+      gradient: "from-red-500 to-rose-500",
+      description: "Not a fit for this role",
+    },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-150">
-        <DialogHeader>
-          <DialogTitle>Review Application</DialogTitle>
-          <DialogDescription>
-            Review {application.student?.fullName}'s application
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="space-y-3 pb-6 border-b">
+          <DialogTitle className="text-2xl font-bold tracking-tight">
+            Review Application
+          </DialogTitle>
+          <DialogDescription className="text-base">
+            Evaluate {application.student?.fullName}'s application and provide
+            feedback
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Applicant Info */}
-          <div className="rounded-lg border bg-gray-50 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white font-semibold text-lg">
+        <div className="space-y-6 py-6">
+          {/* Applicant Profile Card */}
+          <div className="rounded-xl bg-linear-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 border-2 border-indigo-100 dark:border-indigo-900/30 p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-center justify-center size-16 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 text-white font-bold text-2xl shadow-lg">
                 {application.student?.fullName.charAt(0).toUpperCase()}
               </div>
-              <div>
-                <p className="font-semibold text-gray-900">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-foreground truncate">
                   {application.student?.fullName}
-                </p>
-                <p className="text-sm text-gray-600">
+                </h3>
+                <p className="text-sm text-muted-foreground truncate">
                   {application.student?.email}
                 </p>
               </div>
@@ -133,14 +165,16 @@ export function ReviewApplicationDialog({
             {/* Skills */}
             {application.student?.skills &&
               application.student.skills.length > 0 && (
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Skills:</p>
-                  <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Skills
+                  </p>
+                  <div className="flex flex-wrap gap-2">
                     {application.student.skills.map((skill) => (
                       <Badge
                         key={skill}
                         variant="secondary"
-                        className="text-xs"
+                        className="text-xs font-medium"
                       >
                         {skill}
                       </Badge>
@@ -151,10 +185,12 @@ export function ReviewApplicationDialog({
           </div>
 
           {/* Cover Letter */}
-          <div>
-            <Label className="text-base">Cover Letter</Label>
-            <div className="mt-2 rounded-lg border bg-white p-4 max-h-50 overflow-y-auto">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+          <div className="space-y-3">
+            <Label className="text-base font-semibold text-foreground">
+              Cover Letter
+            </Label>
+            <div className="rounded-lg border-2 bg-muted/30 p-4 max-h-64 overflow-y-auto">
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
                 {application.coverLetter}
               </p>
             </div>
@@ -162,31 +198,39 @@ export function ReviewApplicationDialog({
 
           {/* Resume Link */}
           {application.resumeUrl && (
-            <div>
-              <Label className="text-base">Resume</Label>
-              <div className="mt-2">
-                <Button asChild variant="outline" size="sm">
-                  <a
-                    href={application.resumeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View Resume
-                  </a>
-                </Button>
-              </div>
+            <div className="space-y-3">
+              <Label className="text-base font-semibold text-foreground">
+                Resume
+              </Label>
+              <Button
+                asChild
+                variant="outline"
+                size="default"
+                className="w-full"
+              >
+                <a
+                  href={application.resumeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View Resume
+                </a>
+              </Button>
             </div>
           )}
 
           {/* Review Form */}
           <form
             onSubmit={handleSubmit(onSubmit)}
-            className="space-y-4 pt-4 border-t"
+            className="space-y-6 pt-6 border-t"
           >
-            {/* Decision */}
-            <div className="space-y-2">
-              <Label htmlFor="status">
-                Decision <span className="text-destructive">*</span>
+            {/* Decision Selection */}
+            <div className="space-y-3">
+              <Label
+                htmlFor="status"
+                className="text-base font-semibold text-foreground"
+              >
+                Your Decision <span className="text-destructive">*</span>
               </Label>
               <Controller
                 name="status"
@@ -197,28 +241,36 @@ export function ReviewApplicationDialog({
                     onValueChange={field.onChange}
                     disabled={isLoading}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-auto py-8">
                       <SelectValue placeholder="Select decision" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="UNDER_REVIEW">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-blue-500" />
-                          Mark as Under Review
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="ACCEPTED">
-                        <div className="flex items-center gap-2">
-                          <CheckCircleIcon className="h-4 w-4 text-green-600" />
-                          Accept Application
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="REJECTED">
-                        <div className="flex items-center gap-2">
-                          <XCircleIcon className="h-4 w-4 text-red-600" />
-                          Reject Application
-                        </div>
-                      </SelectItem>
+                      {statusOptions.map((option) => {
+                        const Icon = option.icon;
+                        return (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            className="py-3"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`flex items-center justify-center size-10 rounded-lg bg-linear-to-br ${option.gradient} shadow-sm`}
+                              >
+                                <Icon className="size-5 text-white" />
+                              </div>
+                              <div className="text-left">
+                                <p className="font-medium text-sm">
+                                  {option.label}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {option.description}
+                                </p>
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 )}
@@ -232,15 +284,18 @@ export function ReviewApplicationDialog({
 
             {/* Rejection Reason (conditional) */}
             {selectedStatus === "REJECTED" && (
-              <div className="space-y-2">
-                <Label htmlFor="rejectionReason">
-                  Rejection Reason <span className="text-destructive">*</span>
+              <div className="space-y-3 animate-in fade-in-0 slide-in-from-top-2 duration-300">
+                <Label
+                  htmlFor="rejectionReason"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Rejection Feedback <span className="text-destructive">*</span>
                 </Label>
                 <textarea
                   id="rejectionReason"
                   {...register("rejectionReason")}
-                  placeholder="Provide constructive feedback on why the application was rejected..."
-                  className="w-full min-h-25 rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="Provide constructive feedback to help the candidate improve..."
+                  className="w-full min-h-32 rounded-lg border-2 bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
                   disabled={isLoading}
                 />
                 {errors.rejectionReason && (
@@ -249,13 +304,14 @@ export function ReviewApplicationDialog({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  This will be visible to the applicant
+                  This feedback will be visible to the applicant. Be
+                  constructive and specific.
                 </p>
               </div>
             )}
 
-            {/* Submit Buttons */}
-            <div className="flex gap-3">
+            {/* Submit Actions */}
+            <div className="flex gap-3 pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -265,10 +321,14 @@ export function ReviewApplicationDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading} className="flex-1">
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="flex-1 shadow-sm hover:shadow-md transition-all duration-200"
+              >
                 {isLoading ? (
                   <>
-                    <Loader2Icon className="h-4 w-4 animate-spin" />
+                    <Loader2Icon className="size-4 animate-spin" />
                     Submitting...
                   </>
                 ) : (
