@@ -3,20 +3,27 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ═══════════════════════════════════════════════════════
-   CODIONIX DESIGN SYSTEM
+/* ═══════════════════════════════════════════════════════════════════
+   CODIONIX DESIGN TOKEN SYSTEM
    
-   Design Philosophy: "Calm Confidence"
-   - Indigo-blue primary (distinctive, trustworthy)
-   - Warm neutrals (reduces eye strain)
-   - 24px spacing rhythm (visual consistency)
-   - Generous line-height (readability)
-   ═══════════════════════════════════════════════════════ */
+   Philosophy: "Builder's Workshop"
+   - Teal-cyan primary (distinctive, builder-focused)
+   - Warm amber secondary (earned achievements)
+   - Warm stone neutrals (human comfort)
+   - Functional accents (purposeful, restrained)
+   
+   Constraint System:
+   - 70-80% neutral usage
+   - 40-50% of color is teal-cyan
+   - 10-15% amber (rare, meaningful)
+   - 15-20% functional accents
+   - Max 3 accent colors per screen
+   ═══════════════════════════════════════════════════════════════════ */
 
 @theme inline {
-  /* ═══════════════════════════════════════════════════════
+  /* ═══════════════════════════════════════════════════════════════════
      RADIUS SYSTEM (Inherited from shadcn)
-     ═══════════════════════════════════════════════════════ */
+     ═══════════════════════════════════════════════════════════════════ */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -25,134 +32,364 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
 
-  /* ═══════════════════════════════════════════════════════
-     COLOR SYSTEM — Indigo-Blue Primary
-     ═══════════════════════════════════════════════════════ */
+  /* ═══════════════════════════════════════════════════════════════════
+     SURFACE TOKENS (Background Layers & Elevation)
+     Mode-specific, creates depth through layering
+     ═══════════════════════════════════════════════════════════════════ */
 
-  /* Base Colors */
-  --color-background: oklch(0.99 0 0); /* Warm off-white */
-  --color-foreground: oklch(
-    0.15 0.01 270
-  ); /* Near-black with subtle blue tint */
+  /* Base Canvas (Darkest/Lightest) */
+  --color-surface-canvas: oklch(0.17 0.015 200); /* Deep teal-black */
+  --color-surface-canvas-subtle: oklch(
+    0.175 0.015 200
+  ); /* Barely lighter canvas */
 
-  /* Card Surfaces */
-  --color-card: oklch(1 0 0); /* Pure white for elevation */
-  --color-card-foreground: oklch(0.15 0.01 270);
+  /* Elevated Surfaces (Cards, Containers) */
+  --color-surface-elevated: oklch(0.22 0.02 200); /* Teal-charcoal */
+  --color-surface-elevated-hover: oklch(0.25 0.02 200); /* Teal-slate (hover) */
+  --color-surface-elevated-active: oklch(0.28 0.025 200); /* Active state */
 
-  /* Popovers/Dropdowns */
-  --color-popover: oklch(1 0 0);
-  --color-popover-foreground: oklch(0.15 0.01 270);
+  /* Modal/Popover Surfaces (Highest Elevation) */
+  --color-surface-overlay: oklch(0.24 0.02 200); /* Modal background */
+  --color-surface-tooltip: oklch(0.26 0.022 200); /* Tooltip/popover */
 
-  /* Primary (Indigo-Blue) — Trust + Confidence */
-  --color-primary: oklch(0.55 0.22 270); /* #4F46E5 equivalent */
-  --color-primary-foreground: oklch(0.99 0 0); /* White text on primary */
+  /* ═══════════════════════════════════════════════════════════════════
+     TEXT TOKENS (Hierarchy & Readability)
+     Mode-specific, maintains warm undertones
+     ═══════════════════════════════════════════════════════════════════ */
 
-  /* Secondary (Subtle Blue-Gray) */
-  --color-secondary: oklch(0.96 0.01 270); /* Very light blue-gray */
-  --color-secondary-foreground: oklch(0.2 0.02 270);
+  /* Primary Text (Headings, Emphasis) */
+  --color-text-primary: oklch(0.95 0.005 40); /* Stone-white (warm) */
+  --color-text-primary-on-brand: oklch(0.98 0.003 40); /* White on teal */
 
-  /* Muted (Neutral Gray) */
-  --color-muted: oklch(0.96 0.005 270); /* Warm gray background */
-  --color-muted-foreground: oklch(0.5 0.02 270); /* Medium gray text */
+  /* Body Text (Default Reading) */
+  --color-text-body: oklch(0.85 0.008 40); /* Stone-gray-200 */
+  --color-text-body-subtle: oklch(0.65 0.01 40); /* Stone-gray-400 */
 
-  /* Accent (Slightly Warmer Blue) */
-  --color-accent: oklch(0.96 0.01 270);
-  --color-accent-foreground: oklch(0.2 0.02 270);
+  /* Metadata/Secondary Text */
+  --color-text-secondary: oklch(0.55 0.012 40); /* Stone-gray-500 */
+  --color-text-tertiary: oklch(0.45 0.015 40); /* Stone-gray-600 */
 
-  /* Destructive (Error Red) */
-  --color-destructive: oklch(0.55 0.22 25); /* Modern red */
+  /* Disabled/Placeholder Text */
+  --color-text-disabled: oklch(
+    0.4 0.015 40
+  ); /* Stone-gray-700 (low contrast) */
+  --color-text-placeholder: oklch(0.48 0.012 40); /* Input placeholder */
 
-  /* Borders & Inputs */
-  --color-border: oklch(0.9 0.01 270); /* Subtle blue-tinted border */
-  --color-input: oklch(0.9 0.01 270);
-  --color-ring: oklch(0.55 0.22 270); /* Focus ring = primary */
+  /* ═══════════════════════════════════════════════════════════════════
+     BRAND TOKENS (Primary Identity)
+     Mode-invariant hue, mode-specific luminosity
+     ═══════════════════════════════════════════════════════════════════ */
 
-  /* Status Colors (Functional) */
-  --color-status-pending: oklch(0.7 0.15 70); /* Warm amber */
-  --color-status-review: oklch(0.6 0.2 250); /* Blue (in progress) */
-  --color-status-success: oklch(0.65 0.18 160); /* Green (accepted) */
-  --color-status-error: oklch(0.55 0.22 25); /* Red (rejected) */
-  --color-status-draft: oklch(0.55 0.02 270); /* Gray (incomplete) */
+  /* Primary: Teal-Cyan (Builder Focus) */
+  --color-brand-primary: oklch(0.65 0.15 195); /* Electric teal-cyan */
+  --color-brand-primary-hover: oklch(0.7 0.16 195); /* Brighter on hover */
+  --color-brand-primary-active: oklch(0.6 0.14 195); /* Pressed state */
+  --color-brand-primary-subtle: oklch(
+    0.65 0.15 195 / 0.15
+  ); /* 15% opacity bg */
+  --color-brand-primary-muted: oklch(
+    0.65 0.15 195 / 0.3
+  ); /* 30% opacity accent */
 
-  /* Chart Colors */
-  --color-chart-1: oklch(0.65 0.22 40);
-  --color-chart-2: oklch(0.6 0.12 185);
-  --color-chart-3: oklch(0.4 0.07 230);
-  --color-chart-4: oklch(0.83 0.19 85);
-  --color-chart-5: oklch(0.77 0.19 70);
+  /* Secondary: Warm Amber (Earned Achievement) */
+  --color-brand-secondary: oklch(0.7 0.14 60); /* Warm amber-gold */
+  --color-brand-secondary-hover: oklch(0.75 0.15 60); /* Glow on hover */
+  --color-brand-secondary-subtle: oklch(0.7 0.14 60 / 0.2); /* 20% opacity bg */
+  --color-brand-secondary-muted: oklch(
+    0.7 0.14 60 / 0.35
+  ); /* 35% opacity glow */
+
+  /* ═══════════════════════════════════════════════════════════════════
+     BORDER TOKENS (Dividers, Outlines)
+     Mode-specific, maintains teal tint in dark mode
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Structural Borders */
+  --color-border-default: oklch(
+    0.35 0.018 200
+  ); /* Stone-gray-800 + teal tint */
+  --color-border-subtle: oklch(0.3 0.015 200); /* Barely visible divider */
+  --color-border-strong: oklch(0.4 0.02 200); /* Emphasized border */
+
+  /* Interactive Borders */
+  --color-border-focus: oklch(0.65 0.15 195); /* Teal-cyan focus ring */
+  --color-border-error: oklch(0.58 0.18 25); /* Coral-red validation */
+  --color-border-success: oklch(0.7 0.14 60); /* Amber success */
+
+  /* ═══════════════════════════════════════════════════════════════════
+     STATE TOKENS (Functional Accents)
+     Mode-invariant semantics, mode-specific contrast
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Error/Destructive (Deep Coral-Red) */
+  --color-state-error: oklch(0.58 0.18 25); /* Warm red, not harsh */
+  --color-state-error-hover: oklch(0.62 0.19 25); /* Brighter on hover */
+  --color-state-error-subtle: oklch(0.58 0.18 25 / 0.15); /* Error bg */
+  --color-state-error-muted: oklch(0.58 0.18 25 / 0.3); /* Error border */
+
+  /* Warning/Caution (Burnt Orange) */
+  --color-state-warning: oklch(0.65 0.15 50); /* Earthy orange */
+  --color-state-warning-hover: oklch(0.68 0.16 50);
+  --color-state-warning-subtle: oklch(0.65 0.15 50 / 0.15);
+  --color-state-warning-muted: oklch(0.65 0.15 50 / 0.3);
+
+  /* Info/Optional (Soft Violet-Purple) */
+  --color-state-info: oklch(0.62 0.12 280); /* Calm purple */
+  --color-state-info-hover: oklch(0.65 0.13 280);
+  --color-state-info-subtle: oklch(0.62 0.12 280 / 0.15);
+  --color-state-info-muted: oklch(0.62 0.12 280 / 0.3);
+
+  /* Success/Stable (Muted Sage Green) */
+  --color-state-success: oklch(0.68 0.1 150); /* Soft green */
+  --color-state-success-hover: oklch(0.7 0.11 150);
+  --color-state-success-subtle: oklch(0.68 0.1 150 / 0.15);
+  --color-state-success-muted: oklch(0.68 0.1 150 / 0.3);
+
+  /* Exploratory/Low-Priority (Soft Lavender) */
+  --color-state-exploratory: oklch(0.7 0.08 300); /* Very subtle lavender */
+  --color-state-exploratory-hover: oklch(0.72 0.09 300);
+  --color-state-exploratory-subtle: oklch(0.7 0.08 300 / 0.12);
+  --color-state-exploratory-muted: oklch(0.7 0.08 300 / 0.25);
+
+  /* ═══════════════════════════════════════════════════════════════════
+     INTERACTION TOKENS (Focus, Hover, Active)
+     Derived from brand tokens, enforces consistency
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Focus Ring (Always Teal-Cyan) */
+  --color-focus-ring: var(--color-brand-primary);
+  --color-focus-ring-offset: var(--color-surface-canvas);
+
+  /* Hover States (Elevation + Glow) */
+  --color-hover-overlay: oklch(0.65 0.15 195 / 0.08); /* Subtle teal glow */
+  --color-hover-border: var(--color-brand-primary-muted);
+
+  /* Active/Pressed States */
+  --color-active-overlay: oklch(0.65 0.15 195 / 0.12); /* Stronger teal */
+  --color-active-border: var(--color-brand-primary);
+
+  /* ═══════════════════════════════════════════════════════════════════
+     SHADOW TOKENS (Elevation System)
+     Mode-specific, uses teal-black in dark mode
+     ═══════════════════════════════════════════════════════════════════ */
+
+  --shadow-color: oklch(0.15 0.02 200); /* Teal-black for shadows */
+  --shadow-sm: 0 1px 2px 0 var(--shadow-color / 0.2);
+  --shadow-md: 0 4px 6px -1px var(--shadow-color / 0.25),
+    0 2px 4px -2px var(--shadow-color / 0.15);
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color / 0.3),
+    0 4px 6px -4px var(--shadow-color / 0.2);
+  --shadow-xl: 0 20px 25px -5px var(--shadow-color / 0.35),
+    0 8px 10px -6px var(--shadow-color / 0.25);
+
+  /* ═══════════════════════════════════════════════════════════════════
+     CHART/DATA VISUALIZATION TOKENS
+     Functional, accessible, mode-aware
+     ═══════════════════════════════════════════════════════════════════ */
+
+  --color-chart-1: oklch(0.65 0.15 195); /* Teal-cyan (primary data) */
+  --color-chart-2: oklch(0.7 0.14 60); /* Amber (secondary data) */
+  --color-chart-3: oklch(0.62 0.12 280); /* Violet (tertiary) */
+  --color-chart-4: oklch(0.68 0.1 150); /* Sage green */
+  --color-chart-5: oklch(0.65 0.15 50); /* Burnt orange */
+
+  /* ═══════════════════════════════════════════════════════════════════
+     COMPONENT-SPECIFIC SEMANTIC TOKENS
+     Maps intent to visual treatment
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Buttons */
+  --color-button-primary-bg: var(--color-brand-primary);
+  --color-button-primary-text: var(--color-text-primary-on-brand);
+  --color-button-primary-hover: var(--color-brand-primary-hover);
+
+  --color-button-secondary-bg: var(--color-surface-elevated);
+  --color-button-secondary-text: var(--color-text-body);
+  --color-button-secondary-border: var(--color-border-default);
+
+  --color-button-destructive-bg: var(--color-state-error);
+  --color-button-destructive-text: var(--color-text-primary-on-brand);
+  --color-button-destructive-hover: var(--color-state-error-hover);
+
+  /* Cards */
+  --color-card-bg: var(--color-surface-elevated);
+  --color-card-border: var(--color-border-subtle);
+  --color-card-hover-bg: var(--color-surface-elevated-hover);
+  --color-card-hover-border: var(--color-border-default);
+
+  /* Inputs */
+  --color-input-bg: var(--color-surface-canvas-subtle);
+  --color-input-border: var(--color-border-default);
+  --color-input-focus-border: var(--color-focus-ring);
+  --color-input-error-border: var(--color-border-error);
+  --color-input-text: var(--color-text-body);
+  --color-input-placeholder: var(--color-text-placeholder);
+
+  /* Badges/Tags */
+  --color-badge-neutral-bg: var(--color-surface-elevated);
+  --color-badge-neutral-text: var(--color-text-body-subtle);
+  --color-badge-neutral-border: var(--color-border-subtle);
+
+  --color-badge-primary-bg: var(--color-brand-primary-subtle);
+  --color-badge-primary-text: var(--color-brand-primary);
+  --color-badge-primary-border: var(--color-brand-primary-muted);
+
+  --color-badge-success-bg: var(--color-state-success-subtle);
+  --color-badge-success-text: var(--color-state-success);
+  --color-badge-success-border: var(--color-state-success-muted);
+
+  /* Navigation */
+  --color-nav-bg: var(--color-surface-canvas);
+  --color-nav-border: var(--color-border-subtle);
+  --color-nav-item-text: var(--color-text-body-subtle);
+  --color-nav-item-hover: var(--color-hover-overlay);
+  --color-nav-item-active-bg: var(--color-brand-primary-subtle);
+  --color-nav-item-active-text: var(--color-brand-primary);
 
   /* Sidebar (Future-proofing) */
-  --color-sidebar: oklch(0.98 0.003 270);
-  --color-sidebar-foreground: oklch(0.15 0.01 270);
-  --color-sidebar-primary: oklch(0.55 0.22 270);
-  --color-sidebar-primary-foreground: oklch(0.99 0 0);
-  --color-sidebar-accent: oklch(0.96 0.01 270);
-  --color-sidebar-accent-foreground: oklch(0.2 0.02 270);
-  --color-sidebar-border: oklch(0.9 0.01 270);
-  --color-sidebar-ring: oklch(0.55 0.22 270);
+  --color-sidebar-bg: var(--color-surface-canvas);
+  --color-sidebar-border: var(--color-border-subtle);
+  --color-sidebar-item-hover: var(--color-hover-overlay);
+  --color-sidebar-item-active: var(--color-brand-primary-subtle);
 }
 
-/* ═══════════════════════════════════════════════════════
-   ROOT VARIABLES (Light Mode)
-   ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   ROOT VARIABLES (Dark Mode - PRIMARY EXPERIENCE)
+   ═══════════════════════════════════════════════════════════════════ */
 :root {
-  --radius: 0.75rem; /* 12px — slightly more rounded than default */
+  --radius: 0.75rem; /* 12px — slightly more rounded */
 
-  /* Light mode values (same as @theme inline) */
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0.15 0.01 270);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.01 270);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 270);
-  --primary: oklch(0.55 0.22 270);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 270);
-  --secondary-foreground: oklch(0.2 0.02 270);
-  --muted: oklch(0.96 0.005 270);
-  --muted-foreground: oklch(0.5 0.02 270);
-  --accent: oklch(0.96 0.01 270);
-  --accent-foreground: oklch(0.2 0.02 270);
-  --destructive: oklch(0.55 0.22 25);
-  --border: oklch(0.9 0.01 270);
-  --input: oklch(0.9 0.01 270);
-  --ring: oklch(0.55 0.22 270);
+  /* Surface Layer System */
+  --background: var(--color-surface-canvas);
+  --foreground: var(--color-text-primary);
 
-  /* Status colors */
-  --status-pending: oklch(0.7 0.15 70);
-  --status-review: oklch(0.6 0.2 250);
-  --status-success: oklch(0.65 0.18 160);
-  --status-error: oklch(0.55 0.22 25);
-  --status-draft: oklch(0.55 0.02 270);
+  /* Card/Elevated Surfaces */
+  --card: var(--color-card-bg);
+  --card-foreground: var(--color-text-body);
+
+  /* Popover/Modal Surfaces */
+  --popover: var(--color-surface-overlay);
+  --popover-foreground: var(--color-text-body);
+
+  /* Brand Colors (Primary = Teal-Cyan) */
+  --primary: var(--color-brand-primary);
+  --primary-foreground: var(--color-text-primary-on-brand);
+
+  /* Secondary (Used sparingly - Amber for achievements) */
+  --secondary: var(--color-surface-elevated);
+  --secondary-foreground: var(--color-text-body);
+
+  /* Muted (Neutral backgrounds) */
+  --muted: var(--color-surface-elevated);
+  --muted-foreground: var(--color-text-body-subtle);
+
+  /* Accent (Interactive hover states - Teal-Cyan) */
+  --accent: var(--color-surface-elevated-hover);
+  --accent-foreground: var(--color-text-body);
+
+  /* Destructive (Error states) */
+  --destructive: var(--color-state-error);
+  --destructive-foreground: var(--color-text-primary-on-brand);
+
+  /* Borders & Inputs */
+  --border: var(--color-border-default);
+  --input: var(--color-input-border);
+  --ring: var(--color-focus-ring);
+
+  /* Achievement/Success Color (Warm Amber) */
+  --achievement: var(--color-brand-secondary);
+  --achievement-foreground: var(--color-text-primary-on-brand);
 }
 
-/* ═══════════════════════════════════════════════════════
-   DARK MODE (Future-Proofing)
-   ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT MODE (Equally Intentional)
+   ═══════════════════════════════════════════════════════════════════ */
 .dark {
-  --background: oklch(0.15 0.01 270);
-  --foreground: oklch(0.98 0.003 270);
-  --card: oklch(0.2 0.02 270);
-  --card-foreground: oklch(0.98 0.003 270);
-  --popover: oklch(0.2 0.02 270);
-  --popover-foreground: oklch(0.98 0.003 270);
-  --primary: oklch(0.6 0.22 270);
-  --primary-foreground: oklch(0.15 0.01 270);
-  --secondary: oklch(0.25 0.02 270);
-  --secondary-foreground: oklch(0.98 0.003 270);
-  --muted: oklch(0.25 0.02 270);
-  --muted-foreground: oklch(0.65 0.02 270);
-  --accent: oklch(0.25 0.02 270);
-  --accent-foreground: oklch(0.98 0.003 270);
-  --destructive: oklch(0.6 0.22 25);
-  --border: oklch(0.3 0.02 270);
-  --input: oklch(0.3 0.02 270);
-  --ring: oklch(0.6 0.22 270);
+  /* Surface System (Inverted) */
+  --color-surface-canvas: oklch(0.97 0.005 40); /* Warm off-white */
+  --color-surface-canvas-subtle: oklch(0.96 0.006 40);
+
+  --color-surface-elevated: oklch(0.99 0.003 40); /* Cream */
+  --color-surface-elevated-hover: oklch(0.98 0.004 40);
+  --color-surface-elevated-active: oklch(0.97 0.005 40);
+
+  --color-surface-overlay: oklch(0.99 0.003 40);
+  --color-surface-tooltip: oklch(0.98 0.004 40);
+
+  /* Text System (Inverted) */
+  --color-text-primary: oklch(0.2 0.008 40); /* Stone-black (warm) */
+  --color-text-primary-on-brand: oklch(0.98 0.003 40); /* White on teal */
+
+  --color-text-body: oklch(0.3 0.01 40); /* Stone-gray-800 */
+  --color-text-body-subtle: oklch(0.45 0.012 40); /* Stone-gray-600 */
+
+  --color-text-secondary: oklch(0.55 0.012 40);
+  --color-text-tertiary: oklch(0.65 0.01 40);
+
+  --color-text-disabled: oklch(0.7 0.008 40);
+  --color-text-placeholder: oklch(0.6 0.01 40);
+
+  /* Brand Colors (Hue-consistent, contrast-adjusted) */
+  --color-brand-primary: oklch(0.55 0.16 195); /* Deeper teal for light bg */
+  --color-brand-primary-hover: oklch(0.6 0.17 195);
+  --color-brand-primary-active: oklch(0.5 0.15 195);
+  --color-brand-primary-subtle: oklch(0.55 0.16 195 / 0.12);
+  --color-brand-primary-muted: oklch(0.55 0.16 195 / 0.25);
+
+  --color-brand-secondary: oklch(0.6 0.13 60); /* Slightly desaturated amber */
+  --color-brand-secondary-hover: oklch(0.65 0.14 60);
+  --color-brand-secondary-subtle: oklch(0.6 0.13 60 / 0.15);
+  --color-brand-secondary-muted: oklch(0.6 0.13 60 / 0.28);
+
+  /* Borders (Warm stone-gray) */
+  --color-border-default: oklch(0.85 0.006 40); /* Stone-gray-300 */
+  --color-border-subtle: oklch(0.9 0.005 40);
+  --color-border-strong: oklch(0.8 0.008 40);
+
+  --color-border-focus: var(--color-brand-primary);
+  --color-border-error: oklch(0.5 0.18 25); /* Deeper red for light bg */
+  --color-border-success: var(--color-brand-secondary);
+
+  /* State Colors (Contrast-adjusted) */
+  --color-state-error: oklch(0.5 0.18 25);
+  --color-state-error-hover: oklch(0.55 0.19 25);
+  --color-state-error-subtle: oklch(0.5 0.18 25 / 0.12);
+  --color-state-error-muted: oklch(0.5 0.18 25 / 0.25);
+
+  --color-state-warning: oklch(0.55 0.15 50);
+  --color-state-warning-hover: oklch(0.58 0.16 50);
+  --color-state-warning-subtle: oklch(0.55 0.15 50 / 0.12);
+  --color-state-warning-muted: oklch(0.55 0.15 50 / 0.25);
+
+  --color-state-info: oklch(0.52 0.12 280);
+  --color-state-info-hover: oklch(0.55 0.13 280);
+  --color-state-info-subtle: oklch(0.52 0.12 280 / 0.12);
+  --color-state-info-muted: oklch(0.52 0.12 280 / 0.25);
+
+  --color-state-success: oklch(0.58 0.1 150);
+  --color-state-success-hover: oklch(0.6 0.11 150);
+  --color-state-success-subtle: oklch(0.58 0.1 150 / 0.12);
+  --color-state-success-muted: oklch(0.58 0.1 150 / 0.25);
+
+  --color-state-exploratory: oklch(0.6 0.08 300);
+  --color-state-exploratory-hover: oklch(0.62 0.09 300);
+  --color-state-exploratory-subtle: oklch(0.6 0.08 300 / 0.1);
+  --color-state-exploratory-muted: oklch(0.6 0.08 300 / 0.22);
+
+  /* Shadows (Warm stone-gray, softer) */
+  --shadow-color: oklch(0.7 0.005 40);
+  --shadow-sm: 0 1px 2px 0 var(--shadow-color / 0.15);
+  --shadow-md: 0 4px 6px -1px var(--shadow-color / 0.2),
+    0 2px 4px -2px var(--shadow-color / 0.12);
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color / 0.25),
+    0 4px 6px -4px var(--shadow-color / 0.15);
+  --shadow-xl: 0 20px 25px -5px var(--shadow-color / 0.28),
+    0 8px 10px -6px var(--shadow-color / 0.18);
 }
 
-/* ═══════════════════════════════════════════════════════
-   BASE STYLES
-   ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   BASE STYLES (Typography & Focus)
+   ═══════════════════════════════════════════════════════════════════ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -160,10 +397,10 @@
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1; /* Enable ligatures */
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 
-  /* Typography Improvements */
+  /* Typography Hierarchy */
   h1,
   h2,
   h3,
@@ -189,63 +426,77 @@
   }
 
   p {
-    @apply leading-relaxed; /* 1.625 line-height for readability */
+    @apply leading-relaxed;
   }
 
-  /* Improved Focus States */
+  /* Focus States (Always Teal-Cyan) */
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
-/* ═══════════════════════════════════════════════════════
-   CUSTOM UTILITIES
-   ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   CUSTOM UTILITIES (Component Intent Mapping)
+   ═══════════════════════════════════════════════════════════════════ */
 @layer utilities {
-  /* Elevation System (Subtle Depth) */
-  .elevation-sm {
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  /* Achievement Badge (Warm Amber - RARE) */
+  .achievement-badge {
+    background: var(--color-brand-secondary-subtle);
+    color: var(--color-brand-secondary);
+    border: 1px solid var(--color-brand-secondary-muted);
   }
 
-  .elevation-md {
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08),
-      0 2px 4px -2px rgb(0 0 0 / 0.05);
-  }
-
-  .elevation-lg {
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08),
-      0 4px 6px -4px rgb(0 0 0 / 0.05);
-  }
-
-  /* Status Badge Colors */
+  /* Status Badge Variants (Functional Accents) */
   .status-pending {
-    @apply bg-status-pending/10 text-status-pending border-status-pending/20;
+    background: var(--color-state-warning-subtle);
+    color: var(--color-state-warning);
+    border: 1px solid var(--color-state-warning-muted);
   }
 
-  .status-review {
-    @apply bg-status-review/10 text-status-review border-status-review/20;
+  .status-in-progress {
+    background: var(--color-brand-primary-subtle);
+    color: var(--color-brand-primary);
+    border: 1px solid var(--color-brand-primary-muted);
   }
 
-  .status-success {
-    @apply bg-status-success/10 text-status-success border-status-success/20;
+  .status-completed {
+    background: var(--color-state-success-subtle);
+    color: var(--color-state-success);
+    border: 1px solid var(--color-state-success-muted);
   }
 
   .status-error {
-    @apply bg-status-error/10 text-status-error border-status-error/20;
+    background: var(--color-state-error-subtle);
+    color: var(--color-state-error);
+    border: 1px solid var(--color-state-error-muted);
   }
 
-  .status-draft {
-    @apply bg-status-draft/10 text-status-draft border-status-draft/20;
+  .status-info {
+    background: var(--color-state-info-subtle);
+    color: var(--color-state-info);
+    border: 1px solid var(--color-state-info-muted);
   }
 
-  /* Gradient Text (for hero sections) */
+  /* Card Hover (Teal Glow) */
+  .card-interactive {
+    @apply transition-all duration-200 ease-out;
+  }
+  .card-interactive:hover {
+    background: var(--color-card-hover-bg);
+    border-color: var(--color-card-hover-border);
+    box-shadow: 0 0 0 1px var(--color-brand-primary-muted);
+  }
+
+  /* Gradient Text (Teal-Cyan) */
   .gradient-text {
-    @apply bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent;
-  }
-
-  /* Smooth Hover Scale */
-  .hover-lift {
-    @apply transition-transform duration-200 ease-out hover:scale-[1.02];
+    background: linear-gradient(
+      135deg,
+      var(--color-brand-primary) 0%,
+      var(--color-brand-primary-hover) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   /* Focus Ring (Consistent) */
@@ -254,25 +505,29 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════
-   COMPONENT-SPECIFIC OVERRIDES
-   ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   COMPONENT OVERRIDES (Enforce Design System)
+   ═══════════════════════════════════════════════════════════════════ */
 
-/* Card Hover Effect (Subtle Lift) */
-.card-interactive {
-  @apply transition-all duration-200 ease-out hover:shadow-md hover:-translate-y-0.5;
-}
-
-/* Button Improvements */
+/* Button States */
 button:disabled {
   @apply cursor-not-allowed opacity-50;
 }
 
-/* Input Focus Improvements */
+/* Input Focus (Teal-Cyan Only) */
 input:focus,
 textarea:focus,
 select:focus {
-  @apply ring-2 ring-primary/20 border-primary;
+  border-color: var(--color-input-focus-border);
+  box-shadow: 0 0 0 3px var(--color-brand-primary-subtle);
+}
+
+/* Input Error State */
+input[aria-invalid="true"],
+textarea[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--color-input-error-border);
+  box-shadow: 0 0 0 3px var(--color-state-error-subtle);
 }
 
 /* Smooth Scrolling */
@@ -280,7 +535,8 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Selection Color (Brand-Aligned) */
+/* Selection Color (Teal-Cyan) */
 ::selection {
-  @apply bg-primary/20 text-foreground;
+  background: var(--color-brand-primary-subtle);
+  color: var(--color-brand-primary);
 }
