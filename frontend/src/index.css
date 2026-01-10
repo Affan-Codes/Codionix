@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Tailwind v4: class-based dark mode variant (shadcn-style) */
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -20,19 +21,192 @@
    - Max 3 accent colors per screen
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ──────────────────────────────────────────────
-   THEME TOKENS (DEFAULT / DARK-FIRST)
-   ────────────────────────────────────────────── */
-@theme {
-  /* Radius system */
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+/* Default = LIGHT MODE */
+:root {
+  --radius: 0.75rem; /* 12px */
 
+  /* Surface System (Light) */
+  --color-surface-canvas: oklch(0.97 0.005 40);
+  --color-surface-canvas-subtle: oklch(0.96 0.006 40);
+
+  --color-surface-elevated: oklch(0.99 0.003 40);
+  --color-surface-elevated-hover: oklch(0.98 0.004 40);
+  --color-surface-elevated-active: oklch(0.97 0.005 40);
+
+  --color-surface-overlay: oklch(0.99 0.003 40);
+  --color-surface-tooltip: oklch(0.98 0.004 40);
+
+  /* Text System (Light) */
+  --color-text-primary: oklch(0.2 0.008 40);
+  --color-text-primary-on-brand: oklch(0.98 0.003 40);
+
+  --color-text-body: oklch(0.3 0.01 40);
+  --color-text-body-subtle: oklch(0.45 0.012 40);
+
+  --color-text-secondary: oklch(0.55 0.012 40);
+  --color-text-tertiary: oklch(0.65 0.01 40);
+
+  --color-text-disabled: oklch(0.7 0.008 40);
+  --color-text-placeholder: oklch(0.6 0.01 40);
+
+  /* Brand Colors (Light) */
+  --color-brand-primary: oklch(0.55 0.16 195);
+  --color-brand-primary-hover: oklch(0.6 0.17 195);
+  --color-brand-primary-active: oklch(0.5 0.15 195);
+  --color-brand-primary-subtle: oklch(0.55 0.16 195 / 0.12);
+  --color-brand-primary-muted: oklch(0.55 0.16 195 / 0.25);
+
+  --color-brand-secondary: oklch(0.6 0.13 60);
+  --color-brand-secondary-hover: oklch(0.65 0.14 60);
+  --color-brand-secondary-subtle: oklch(0.6 0.13 60 / 0.15);
+  --color-brand-secondary-muted: oklch(0.6 0.13 60 / 0.28);
+
+  /* Borders (Light) */
+  --color-border-default: oklch(0.85 0.006 40);
+  --color-border-subtle: oklch(0.9 0.005 40);
+  --color-border-strong: oklch(0.8 0.008 40);
+
+  --color-border-focus: var(--color-brand-primary);
+  --color-border-error: oklch(0.5 0.18 25);
+  --color-border-success: var(--color-brand-secondary);
+
+  /* State Colors (Light) */
+  --color-state-error: oklch(0.5 0.18 25);
+  --color-state-error-hover: oklch(0.55 0.19 25);
+  --color-state-error-subtle: oklch(0.5 0.18 25 / 0.12);
+  --color-state-error-muted: oklch(0.5 0.18 25 / 0.25);
+
+  --color-state-warning: oklch(0.55 0.15 50);
+  --color-state-warning-hover: oklch(0.58 0.16 50);
+  --color-state-warning-subtle: oklch(0.55 0.15 50 / 0.12);
+  --color-state-warning-muted: oklch(0.55 0.15 50 / 0.25);
+
+  --color-state-info: oklch(0.52 0.12 280);
+  --color-state-info-hover: oklch(0.55 0.13 280);
+  --color-state-info-subtle: oklch(0.52 0.12 280 / 0.12);
+  --color-state-info-muted: oklch(0.52 0.12 280 / 0.25);
+
+  --color-state-success: oklch(0.58 0.1 150);
+  --color-state-success-hover: oklch(0.6 0.11 150);
+  --color-state-success-subtle: oklch(0.58 0.1 150 / 0.12);
+  --color-state-success-muted: oklch(0.58 0.1 150 / 0.25);
+
+  --color-state-exploratory: oklch(0.6 0.08 300);
+  --color-state-exploratory-hover: oklch(0.62 0.09 300);
+  --color-state-exploratory-subtle: oklch(0.6 0.08 300 / 0.1);
+  --color-state-exploratory-muted: oklch(0.6 0.08 300 / 0.22);
+
+  /* Interaction */
+  --color-focus-ring: var(--color-brand-primary);
+  --color-focus-ring-offset: var(--color-surface-canvas);
+
+  --color-hover-overlay: oklch(0.55 0.16 195 / 0.06);
+  --color-hover-border: var(--color-brand-primary-muted);
+
+  --color-active-overlay: oklch(0.55 0.16 195 / 0.1);
+  --color-active-border: var(--color-brand-primary);
+
+  /* Shadows (Light) */
+  --shadow-color: oklch(0.7 0.005 40);
+  --shadow-sm: 0 1px 2px 0 var(--shadow-color / 0.15);
+  --shadow-md: 0 4px 6px -1px var(--shadow-color / 0.2),
+    0 2px 4px -2px var(--shadow-color / 0.12);
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color / 0.25),
+    0 4px 6px -4px var(--shadow-color / 0.15);
+  --shadow-xl: 0 20px 25px -5px var(--shadow-color / 0.28),
+    0 8px 10px -6px var(--shadow-color / 0.18);
+
+  /* Charts */
+  --color-chart-1: oklch(0.55 0.16 195);
+  --color-chart-2: oklch(0.6 0.13 60);
+  --color-chart-3: oklch(0.52 0.12 280);
+  --color-chart-4: oklch(0.58 0.1 150);
+  --color-chart-5: oklch(0.55 0.15 50);
+
+  /* Component semantics (Codionix-specific) */
+  --color-button-primary-bg: var(--color-brand-primary);
+  --color-button-primary-text: var(--color-text-primary-on-brand);
+  --color-button-primary-hover: var(--color-brand-primary-hover);
+
+  --color-button-secondary-bg: var(--color-surface-elevated);
+  --color-button-secondary-text: var(--color-text-body);
+  --color-button-secondary-border: var(--color-border-default);
+
+  --color-button-destructive-bg: var(--color-state-error);
+  --color-button-destructive-text: var(--color-text-primary-on-brand);
+  --color-button-destructive-hover: var(--color-state-error-hover);
+
+  --color-card-bg: var(--color-surface-elevated);
+  --color-card-border: var(--color-border-subtle);
+  --color-card-hover-bg: var(--color-surface-elevated-hover);
+  --color-card-hover-border: var(--color-border-default);
+
+  --color-input-bg: var(--color-surface-canvas-subtle);
+  --color-input-border: var(--color-border-default);
+  --color-input-focus-border: var(--color-focus-ring);
+  --color-input-error-border: var(--color-border-error);
+  --color-input-text: var(--color-text-body);
+  --color-input-placeholder: var(--color-text-placeholder);
+
+  --color-badge-neutral-bg: var(--color-surface-elevated);
+  --color-badge-neutral-text: var(--color-text-body-subtle);
+  --color-badge-neutral-border: var(--color-border-subtle);
+
+  --color-badge-primary-bg: var(--color-brand-primary-subtle);
+  --color-badge-primary-text: var(--color-brand-primary);
+  --color-badge-primary-border: var(--color-brand-primary-muted);
+
+  --color-badge-success-bg: var(--color-state-success-subtle);
+  --color-badge-success-text: var(--color-state-success);
+  --color-badge-success-border: var(--color-state-success-muted);
+
+  --color-nav-bg: var(--color-surface-canvas);
+  --color-nav-border: var(--color-border-subtle);
+  --color-nav-item-text: var(--color-text-body-subtle);
+  --color-nav-item-hover: var(--color-hover-overlay);
+  --color-nav-item-active-bg: var(--color-brand-primary-subtle);
+  --color-nav-item-active-text: var(--color-brand-primary);
+
+  --color-sidebar-bg: var(--color-surface-canvas);
+  --color-sidebar-border: var(--color-border-subtle);
+  --color-sidebar-item-hover: var(--color-hover-overlay);
+  --color-sidebar-item-active: var(--color-brand-primary-subtle);
+
+  /* shadcn-style semantic tokens (these drive bg-*, text-*, border-* utilities) */
+  --background: var(--color-surface-canvas);
+  --foreground: var(--color-text-primary);
+
+  --card: var(--color-card-bg);
+  --card-foreground: var(--color-text-body);
+
+  --popover: var(--color-surface-overlay);
+  --popover-foreground: var(--color-text-body);
+
+  --primary: var(--color-brand-primary);
+  --primary-foreground: var(--color-text-primary-on-brand);
+
+  --secondary: var(--color-surface-elevated);
+  --secondary-foreground: var(--color-text-body);
+
+  --muted: var(--color-surface-elevated);
+  --muted-foreground: var(--color-text-body-subtle);
+
+  --accent: var(--color-surface-elevated-hover);
+  --accent-foreground: var(--color-text-body);
+
+  --destructive: var(--color-state-error);
+  --destructive-foreground: var(--color-text-primary-on-brand);
+
+  --border: var(--color-border-default);
+  --input: var(--color-input-border);
+  --ring: var(--color-focus-ring);
+
+  --achievement: var(--color-brand-secondary);
+  --achievement-foreground: var(--color-text-primary-on-brand);
+}
+
+/* DARK MODE */
+.dark {
   /* Surface tokens */
   --color-surface-canvas: oklch(0.17 0.015 200);
   --color-surface-canvas-subtle: oklch(0.175 0.015 200);
@@ -104,7 +278,7 @@
   --color-state-exploratory-subtle: oklch(0.7 0.08 300 / 0.12);
   --color-state-exploratory-muted: oklch(0.7 0.08 300 / 0.25);
 
-  /* Interaction tokens */
+  /* Interaction */
   --color-focus-ring: var(--color-brand-primary);
   --color-focus-ring-offset: var(--color-surface-canvas);
 
@@ -130,171 +304,57 @@
   --color-chart-3: oklch(0.62 0.12 280);
   --color-chart-4: oklch(0.68 0.1 150);
   --color-chart-5: oklch(0.65 0.15 50);
-
-  /* Component semantics */
-  --color-button-primary-bg: var(--color-brand-primary);
-  --color-button-primary-text: var(--color-text-primary-on-brand);
-  --color-button-primary-hover: var(--color-brand-primary-hover);
-
-  --color-button-secondary-bg: var(--color-surface-elevated);
-  --color-button-secondary-text: var(--color-text-body);
-  --color-button-secondary-border: var(--color-border-default);
-
-  --color-button-destructive-bg: var(--color-state-error);
-  --color-button-destructive-text: var(--color-text-primary-on-brand);
-  --color-button-destructive-hover: var(--color-state-error-hover);
-
-  --color-card-bg: var(--color-surface-elevated);
-  --color-card-border: var(--color-border-subtle);
-  --color-card-hover-bg: var(--color-surface-elevated-hover);
-  --color-card-hover-border: var(--color-border-default);
-
-  --color-input-bg: var(--color-surface-canvas-subtle);
-  --color-input-border: var(--color-border-default);
-  --color-input-focus-border: var(--color-focus-ring);
-  --color-input-error-border: var(--color-border-error);
-  --color-input-text: var(--color-text-body);
-  --color-input-placeholder: var(--color-text-placeholder);
-
-  --color-badge-neutral-bg: var(--color-surface-elevated);
-  --color-badge-neutral-text: var(--color-text-body-subtle);
-  --color-badge-neutral-border: var(--color-border-subtle);
-
-  --color-badge-primary-bg: var(--color-brand-primary-subtle);
-  --color-badge-primary-text: var(--color-brand-primary);
-  --color-badge-primary-border: var(--color-brand-primary-muted);
-
-  --color-badge-success-bg: var(--color-state-success-subtle);
-  --color-badge-success-text: var(--color-state-success);
-  --color-badge-success-border: var(--color-state-success-muted);
-
-  --color-nav-bg: var(--color-surface-canvas);
-  --color-nav-border: var(--color-border-subtle);
-  --color-nav-item-text: var(--color-text-body-subtle);
-  --color-nav-item-hover: var(--color-hover-overlay);
-  --color-nav-item-active-bg: var(--color-brand-primary-subtle);
-  --color-nav-item-active-text: var(--color-brand-primary);
-
-  --color-sidebar-bg: var(--color-surface-canvas);
-  --color-sidebar-border: var(--color-border-subtle);
-  --color-sidebar-item-hover: var(--color-hover-overlay);
-  --color-sidebar-item-active: var(--color-brand-primary-subtle);
-
-  /* Root semantic tokens (dark-first) */
-  --radius: 0.75rem;
-
-  --background: var(--color-surface-canvas);
-  --foreground: var(--color-text-primary);
-
-  --card: var(--color-card-bg);
-  --card-foreground: var(--color-text-body);
-
-  --popover: var(--color-surface-overlay);
-  --popover-foreground: var(--color-text-body);
-
-  --primary: var(--color-brand-primary);
-  --primary-foreground: var(--color-text-primary-on-brand);
-
-  --secondary: var(--color-surface-elevated);
-  --secondary-foreground: var(--color-text-body);
-
-  --muted: var(--color-surface-elevated);
-  --muted-foreground: var(--color-text-body-subtle);
-
-  --accent: var(--color-surface-elevated-hover);
-  --accent-foreground: var(--color-text-body);
-
-  --destructive: var(--color-state-error);
-  --destructive-foreground: var(--color-text-primary-on-brand);
-
-  --border: var(--color-border-default);
-  --input: var(--color-input-border);
-  --ring: var(--color-focus-ring);
-
-  --achievement: var(--color-brand-secondary);
-  --achievement-foreground: var(--color-text-primary-on-brand);
 }
 
-/* ──────────────────────────────────────────────
-   LIGHT-MODE OVERRIDES (via .dark variant)
-   ────────────────────────────────────────────── */
-@layer theme {
-  .dark {
-    --color-surface-canvas: oklch(0.97 0.005 40);
-    --color-surface-canvas-subtle: oklch(0.96 0.006 40);
+@theme inline {
+  /* Radius (shadcn-style) */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
 
-    --color-surface-elevated: oklch(0.99 0.003 40);
-    --color-surface-elevated-hover: oklch(0.98 0.004 40);
-    --color-surface-elevated-active: oklch(0.97 0.005 40);
+  /* shadcn semantic palette -> Tailwind utilities */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
 
-    --color-surface-overlay: oklch(0.99 0.003 40);
-    --color-surface-tooltip: oklch(0.98 0.004 40);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
 
-    --color-text-primary: oklch(0.2 0.008 40);
-    --color-text-primary-on-brand: oklch(0.98 0.003 40);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
-    --color-text-body: oklch(0.3 0.01 40);
-    --color-text-body-subtle: oklch(0.45 0.012 40);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
 
-    --color-text-secondary: oklch(0.55 0.012 40);
-    --color-text-tertiary: oklch(0.65 0.01 40);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
 
-    --color-text-disabled: oklch(0.7 0.008 40);
-    --color-text-placeholder: oklch(0.6 0.01 40);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
 
-    --color-brand-primary: oklch(0.55 0.16 195);
-    --color-brand-primary-hover: oklch(0.6 0.17 195);
-    --color-brand-primary-active: oklch(0.5 0.15 195);
-    --color-brand-primary-subtle: oklch(0.55 0.16 195 / 0.12);
-    --color-brand-primary-muted: oklch(0.55 0.16 195 / 0.25);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
-    --color-brand-secondary: oklch(0.6 0.13 60);
-    --color-brand-secondary-hover: oklch(0.65 0.14 60);
-    --color-brand-secondary-subtle: oklch(0.6 0.13 60 / 0.15);
-    --color-brand-secondary-muted: oklch(0.6 0.13 60 / 0.28);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
-    --color-border-default: oklch(0.85 0.006 40);
-    --color-border-subtle: oklch(0.9 0.005 40);
-    --color-border-strong: oklch(0.8 0.008 40);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-    --color-border-focus: var(--color-brand-primary);
-    --color-border-error: oklch(0.5 0.18 25);
-    --color-border-success: var(--color-brand-secondary);
+  /* Extra semantic (your system) */
+  --color-achievement: var(--achievement);
+  --color-achievement-foreground: var(--achievement-foreground);
 
-    --color-state-error: oklch(0.5 0.18 25);
-    --color-state-error-hover: oklch(0.55 0.19 25);
-    --color-state-error-subtle: oklch(0.5 0.18 25 / 0.12);
-    --color-state-error-muted: oklch(0.5 0.18 25 / 0.25);
-
-    --color-state-warning: oklch(0.55 0.15 50);
-    --color-state-warning-hover: oklch(0.58 0.16 50);
-    --color-state-warning-subtle: oklch(0.55 0.15 50 / 0.12);
-    --color-state-warning-muted: oklch(0.55 0.15 50 / 0.25);
-
-    --color-state-info: oklch(0.52 0.12 280);
-    --color-state-info-hover: oklch(0.55 0.13 280);
-    --color-state-info-subtle: oklch(0.52 0.12 280 / 0.12);
-    --color-state-info-muted: oklch(0.52 0.12 280 / 0.25);
-
-    --color-state-success: oklch(0.58 0.1 150);
-    --color-state-success-hover: oklch(0.6 0.11 150);
-    --color-state-success-subtle: oklch(0.58 0.1 150 / 0.12);
-    --color-state-success-muted: oklch(0.58 0.1 150 / 0.25);
-
-    --color-state-exploratory: oklch(0.6 0.08 300);
-    --color-state-exploratory-hover: oklch(0.62 0.09 300);
-    --color-state-exploratory-subtle: oklch(0.6 0.08 300 / 0.1);
-    --color-state-exploratory-muted: oklch(0.6 0.08 300 / 0.22);
-
-    --shadow-color: oklch(0.7 0.005 40);
-    --shadow-sm: 0 1px 2px 0 var(--shadow-color / 0.15);
-    --shadow-md: 0 4px 6px -1px var(--shadow-color / 0.2),
-      0 2px 4px -2px var(--shadow-color / 0.12);
-    --shadow-lg: 0 10px 15px -3px var(--shadow-color / 0.25),
-      0 4px 6px -4px var(--shadow-color / 0.15);
-    --shadow-xl: 0 20px 25px -5px var(--shadow-color / 0.28),
-      0 8px 10px -6px var(--shadow-color / 0.18);
-  }
+  /* Charts as Tailwind colors (optional utilities like `text-chart-1`) */
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
 }
 
 /* ──────────────────────────────────────────────
@@ -350,7 +410,7 @@
 }
 
 /* ──────────────────────────────────────────────
-   CUSTOM UTILITIES (USING @utility)
+   CUSTOM UTILITIES
    ────────────────────────────────────────────── */
 @utility achievement-badge {
   background: var(--color-brand-secondary-subtle);
