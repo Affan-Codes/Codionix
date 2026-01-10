@@ -1,246 +1,388 @@
 import { Layout } from "@/components/layout/Layout";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { ROUTES } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
 import {
   BriefcaseIcon,
   FileTextIcon,
-  TrendingUpIcon,
-  SparklesIcon,
-  RocketIcon,
+  PlusCircleIcon,
   TargetIcon,
 } from "lucide-react";
 import { Link } from "react-router";
+import { Button } from "@/components/ui/button";
+import { ActiveWorkspace } from "@/components/dashboard/ActiveWorkspace";
+import { ActivityTimeline } from "@/components/dashboard/ActivityTimeline";
+import { MetricsPanel } from "@/components/dashboard/MetricsPanel";
 
 export default function Dashboard() {
   const { user } = useAuth();
 
-  // Role-specific quick actions with emotional design
-  const getQuickActions = () => {
-    if (user?.role === "STUDENT") {
-      return [
-        {
-          title: "Discover Projects",
-          description:
-            "Find opportunities that match your skills and interests",
-          href: ROUTES.PROJECTS,
-          icon: SparklesIcon,
-          gradient: "from-indigo-500 to-purple-600",
-          hoverGradient: "hover:from-indigo-600 hover:to-purple-700",
-        },
-        {
-          title: "Track Applications",
-          description: "See where you stand and what's next",
-          href: ROUTES.APPLICATIONS,
-          icon: TargetIcon,
-          gradient: "from-blue-500 to-cyan-600",
-          hoverGradient: "hover:from-blue-600 hover:to-cyan-700",
-        },
-      ];
-    }
+  // MOCK DATA
+  const activeWork = [
+    {
+      id: "1",
+      title: "Full-Stack E-commerce Platform",
+      company: "TechCorp Inc.",
+      type: "INTERNSHIP" as const,
+      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      progress: 65,
+      location: "Remote",
+      stipend: 1200,
+      nextMilestone: "API Integration",
+      skills: ["React", "Node.js", "PostgreSQL", "AWS"],
+    },
+    {
+      id: "2",
+      title: "Mobile App UI Redesign",
+      company: "DesignStudio",
+      type: "PROJECT" as const,
+      deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      progress: 30,
+      location: "New York, NY",
+      nextMilestone: "Wireframe Review",
+      skills: ["Figma", "React Native", "TypeScript"],
+    },
+    {
+      id: "3",
+      title: "ML Model Training Pipeline",
+      company: "AI Labs",
+      type: "INTERNSHIP" as const,
+      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      progress: 85,
+      location: "Remote",
+      stipend: 1500,
+      nextMilestone: "Model Deployment",
+      skills: ["Python", "TensorFlow", "Docker"],
+    },
+  ];
 
-    if (user?.role === "MENTOR" || user?.role === "EMPLOYER") {
-      return [
-        {
-          title: "Create Project",
-          description: "Post a new opportunity for talented students",
-          href: ROUTES.CREATE_PROJECT,
-          icon: RocketIcon,
-          gradient: "from-violet-500 to-indigo-600",
-          hoverGradient: "hover:from-violet-600 hover:to-indigo-700",
-        },
-        {
-          title: "Manage Projects",
-          description: "Review applications and connect with candidates",
-          href: ROUTES.PROJECTS,
-          icon: BriefcaseIcon,
-          gradient: "from-blue-500 to-indigo-600",
-          hoverGradient: "hover:from-blue-600 hover:to-indigo-700",
-        },
-      ];
-    }
+  const recentActivity = [
+    {
+      id: "1",
+      type: "application_submitted" as const,
+      projectTitle: "Full-Stack E-commerce Platform",
+      projectType: "INTERNSHIP" as const,
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      status: "PENDING" as const,
+    },
+    {
+      id: "2",
+      type: "application_reviewed" as const,
+      projectTitle: "React Dashboard Development",
+      projectType: "PROJECT" as const,
+      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      status: "UNDER_REVIEW" as const,
+    },
+    {
+      id: "3",
+      type: "application_accepted" as const,
+      projectTitle: "Node.js API Development",
+      projectType: "INTERNSHIP" as const,
+      timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+      status: "ACCEPTED" as const,
+    },
+    {
+      id: "4",
+      type: "application_rejected" as const,
+      projectTitle: "Mobile App UI Design",
+      projectType: "PROJECT" as const,
+      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      status: "REJECTED" as const,
+      rejectionReason:
+        "Looking for candidates with more design experience in fintech applications",
+    },
+    {
+      id: "5",
+      type: "new_project" as const,
+      projectTitle: "AI Chatbot Development",
+      projectType: "PROJECT" as const,
+      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      skills: ["Python", "TensorFlow", "NLP"],
+    },
+  ];
 
-    return [];
-  };
+  const weeklyMetrics = [
+    {
+      label: "Applications",
+      value: 24,
+      change: 12,
+      format: "number" as const,
+    },
+    {
+      label: "Profile Views",
+      value: 87,
+      change: 8,
+      format: "number" as const,
+    },
+    {
+      label: "Response Rate",
+      value: 82,
+      change: 5,
+      format: "percentage" as const,
+    },
+    {
+      label: "Projects Completed",
+      value: 3,
+      change: 1,
+      format: "number" as const,
+    },
+  ];
 
-  const quickActions = getQuickActions();
+  const upcomingDeadlines = [
+    {
+      id: "1",
+      title: "ML Model Training Pipeline",
+      type: "submission" as const,
+      date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      urgent: true,
+    },
+    {
+      id: "2",
+      title: "Full-Stack E-commerce Platform",
+      type: "application" as const,
+      date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      urgent: false,
+    },
+    {
+      id: "3",
+      title: "Mobile App UI Redesign",
+      type: "review" as const,
+      date: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000),
+      urgent: false,
+    },
+  ];
 
-  // Role-specific greeting
-  const getGreeting = () => {
-    if (user?.role === "STUDENT") {
-      return "Ready to learn something new?";
-    }
-    if (user?.role === "MENTOR") {
-      return "Ready to inspire the next generation?";
-    }
-    if (user?.role === "EMPLOYER") {
-      return "Ready to discover exceptional talent?";
-    }
-    return "Welcome back!";
-  };
+  const isStudent = user?.role === "STUDENT";
 
   return (
     <Layout>
-      <div className="space-y-8">
-        {/* Welcome Section (Personalized) */}
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-foreground tracking-tight">
-            Welcome back,{" "}
-            <span className="gradient-text">{user?.fullName}</span>!
-          </h1>
-          <p className="text-lg text-muted-foreground">{getGreeting()}</p>
-        </div>
-
-        {/* Stats Cards (Visual Hierarchy) */}
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {/* Active Projects */}
-          <Card className="relative overflow-hidden transition-all duration-200 hover:shadow-md group">
-            <div className="absolute inset-0 bg-linear-to-br from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 relative">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Projects
-              </CardTitle>
-              <div className="p-2 rounded-lg bg-indigo-100 text-indigo-600">
-                <BriefcaseIcon className="size-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="relative">
-              <div className="text-3xl font-bold text-foreground">12</div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUpIcon className="size-3 text-green-600" />
-                <p className="text-xs text-green-600 font-medium">
-                  +2 from last month
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Applications/Applicants */}
-          <Card className="relative overflow-hidden transition-all duration-200 hover:shadow-md group">
-            <div className="absolute inset-0 bg-linear-to-br from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 relative">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {user?.role === "STUDENT" ? "Applications" : "Applicants"}
-              </CardTitle>
-              <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
-                <FileTextIcon className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="relative">
-              <div className="text-3xl font-bold text-foreground">8</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                3 pending review
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Success Rate */}
-          <Card className="relative overflow-hidden transition-all duration-200 hover:shadow-md group">
-            <div className="absolute inset-0 bg-linear-to-br from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 relative">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Success Rate
-              </CardTitle>
-              <div className="p-2 rounded-lg bg-green-100 text-green-600">
-                <TrendingUpIcon className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="relative">
-              <div className="text-3xl font-bold text-foreground">75%</div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUpIcon className="size-3 text-green-600" />
-                <p className="text-xs text-green-600 font-medium">
-                  +5% from last month
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Profile Views */}
-          <Card className="relative overflow-hidden transition-all duration-200 hover:shadow-md group">
-            <div className="absolute inset-0 bg-linear-to-br from-purple-500/10 to-pink-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 relative">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Profile Views
-              </CardTitle>
-              <div className="p-2 rounded-lg bg-purple-100 text-purple-600">
-                <SparklesIcon className="h-4 w-4" />
-              </div>
-            </CardHeader>
-            <CardContent className="relative">
-              <div className="text-3xl font-bold text-foreground">143</div>
-              <div className="flex items-center gap-1 mt-1">
-                <TrendingUpIcon className="size-3 text-green-600" />
-                <p className="text-xs text-green-600 font-medium">
-                  +12 this week
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions (High Visual Impact) */}
-        <div>
-          <h2 className="text-2xl font-semibold text-foreground mb-6 tracking-tight">
-            Quick Actions
-          </h2>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <Link key={action.href} to={action.href} className="group">
-                  <Card className="h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer border-2 hover:border-primary/20">
-                    <CardHeader className="space-y-4">
-                      {/* Icon with Gradient Background */}
-                      <div
-                        className={`inline-flex size-14 items-center justify-center rounded-xl bg-linear-to-br ${action.gradient} ${action.hoverGradient} transition-all duration-300 shadow-lg group-hover:shadow-xl group-hover:scale-110`}
-                      >
-                        <Icon className="size-7 text-white" />
-                      </div>
-
-                      {/* Title + Description */}
-                      <div className="space-y-2">
-                        <CardTitle className="text-xl group-hover:text-primary transition-colors">
-                          {action.title}
-                        </CardTitle>
-                        <CardDescription className="text-sm leading-relaxed">
-                          {action.description}
-                        </CardDescription>
-                      </div>
-                    </CardHeader>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Recent Activity Placeholder */}
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="text-xl">Recent Activity</CardTitle>
-            <CardDescription>
-              Your latest interactions and updates
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center py-12 space-y-3">
-              <div className="p-4 rounded-full bg-muted">
-                <FileTextIcon className="size-8 text-muted-foreground" />
-              </div>
-              <p className="text-sm text-muted-foreground text-center max-w-sm">
-                Activity feed coming soon. We'll show your recent applications,
-                project updates, and important notifications here.
-              </p>
+      <div className="fixed inset-0 top-16 flex overflow-hidden">
+        {/* LEFT RAIL: Command Strip (fixed width, no scroll) */}
+        <aside className="hidden lg:flex flex-col w-20 border-r border-border bg-card">
+          {/* User Avatar */}
+          <div className="flex flex-col items-center py-6 border-b border-border">
+            <div className="flex items-center justify-center size-12 rounded-xl bg-linear-to-br from-primary via-primary to-primary/70 text-primary-foreground font-bold text-lg shadow-lg">
+              {user?.fullName.charAt(0).toUpperCase()}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Quick Stats - Vertical */}
+          <div className="flex-1 flex flex-col gap-6 py-6 px-3">
+            <div className="flex flex-col items-center">
+              <div className="text-2xl font-bold text-foreground tabular-nums">
+                {activeWork.length}
+              </div>
+              <div className="text-[10px] text-muted-foreground text-center uppercase tracking-wider mt-1 leading-tight">
+                Active
+              </div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-2xl font-bold text-foreground tabular-nums">
+                {recentActivity.filter((a) => a.status === "PENDING").length}
+              </div>
+              <div className="text-[10px] text-muted-foreground text-center uppercase tracking-wider mt-1 leading-tight">
+                Pending
+              </div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-2xl font-bold text-foreground tabular-nums">
+                {weeklyMetrics.find((m) => m.label === "Response Rate")?.value}
+                <span className="text-xs text-muted-foreground">%</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground text-center uppercase tracking-wider mt-1 leading-tight">
+                Success
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons - Vertical */}
+          <div className="flex flex-col gap-2 p-3 border-t border-border">
+            {isStudent ? (
+              <>
+                <Button
+                  asChild
+                  size="icon"
+                  className="size-12 rounded-xl"
+                  title="Find Projects"
+                >
+                  <Link to={ROUTES.PROJECTS}>
+                    <TargetIcon className="size-5" />
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  size="icon"
+                  variant="outline"
+                  className="size-12 rounded-xl"
+                  title="Applications"
+                >
+                  <Link to={ROUTES.APPLICATIONS}>
+                    <FileTextIcon className="size-5" />
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  asChild
+                  size="icon"
+                  className="size-12 rounded-xl"
+                  title="New Project"
+                >
+                  <Link to={ROUTES.CREATE_PROJECT}>
+                    <PlusCircleIcon className="size-5" />
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  size="icon"
+                  variant="outline"
+                  className="size-12 rounded-xl"
+                  title="Manage"
+                >
+                  <Link to={ROUTES.PROJECTS}>
+                    <BriefcaseIcon className="size-5" />
+                  </Link>
+                </Button>
+              </>
+            )}
+          </div>
+        </aside>
+
+        {/* MAIN CONTENT: Single scroll container */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* CENTER: Primary workspace */}
+          <main className="flex-1 overflow-y-auto scrollbar-hide">
+            <div className="max-w-4xl mx-auto px-6 lg:px-8 py-8">
+              <div className="space-y-12">
+                {/* Header - Minimal */}
+                <header className="space-y-1">
+                  <h1 className="text-2xl font-bold text-foreground tracking-tight">
+                    Workspace
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date().toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </p>
+                </header>
+
+                {/* Mobile Stats (visible on small screens) */}
+                <div className="lg:hidden grid grid-cols-3 gap-4 pb-8 border-b border-border">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-foreground tabular-nums">
+                      {activeWork.length}
+                    </div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">
+                      Active
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-foreground tabular-nums">
+                      {
+                        recentActivity.filter((a) => a.status === "PENDING")
+                          .length
+                      }
+                    </div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">
+                      Pending
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-foreground tabular-nums">
+                      {
+                        weeklyMetrics.find((m) => m.label === "Response Rate")
+                          ?.value
+                      }
+                      %
+                    </div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider mt-1">
+                      Success
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile Actions */}
+                <div className="lg:hidden flex gap-2">
+                  {isStudent ? (
+                    <>
+                      <Button asChild className="flex-1 gap-2">
+                        <Link to={ROUTES.PROJECTS}>
+                          <TargetIcon className="size-4" />
+                          Find Projects
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="flex-1 gap-2"
+                      >
+                        <Link to={ROUTES.APPLICATIONS}>
+                          <FileTextIcon className="size-4" />
+                          Applications
+                        </Link>
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button asChild className="flex-1 gap-2">
+                        <Link to={ROUTES.CREATE_PROJECT}>
+                          <PlusCircleIcon className="size-4" />
+                          New Project
+                        </Link>
+                      </Button>
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="flex-1 gap-2"
+                      >
+                        <Link to={ROUTES.PROJECTS}>
+                          <BriefcaseIcon className="size-4" />
+                          Manage
+                        </Link>
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                {/* Active Projects */}
+                <section>
+                  <ActiveWorkspace
+                    projects={activeWork}
+                    viewAllLink={ROUTES.PROJECTS}
+                  />
+                </section>
+
+                {/* Activity Timeline */}
+                <section>
+                  <ActivityTimeline
+                    activities={recentActivity}
+                    viewAllLink={ROUTES.APPLICATIONS}
+                  />
+                </section>
+
+                {/* Mobile Metrics */}
+                <section className="lg:hidden">
+                  <MetricsPanel
+                    weeklyMetrics={weeklyMetrics}
+                    upcomingDeadlines={upcomingDeadlines}
+                  />
+                </section>
+              </div>
+            </div>
+          </main>
+
+          {/* RIGHT RAIL: Context panel (desktop only) */}
+          <aside className="hidden lg:block w-80 border-l border-border bg-muted/20 overflow-y-auto scrollbar-hide">
+            <div className="p-6">
+              <MetricsPanel
+                weeklyMetrics={weeklyMetrics}
+                upcomingDeadlines={upcomingDeadlines}
+              />
+            </div>
+          </aside>
+        </div>
       </div>
     </Layout>
   );

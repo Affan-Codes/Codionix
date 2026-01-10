@@ -49,7 +49,7 @@ export function Layout({
   showNavbar = true,
 }: LayoutProps) {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {showNavbar && <Navbar />}
       <main
         className={`mx-auto ${maxWidthClasses[maxWidth]} px-4 py-8 sm:px-6 lg:px-8`}
