@@ -11,7 +11,7 @@ import {
   type JwtPayload,
   type TokenPair,
 } from '../utils/jwt.js';
-import { logExternalCall, logger, trackOperation } from '../utils/logger.js';
+import { logger, trackOperation } from '../utils/logger.js';
 import { comparePassword, hashPassword } from '../utils/password.js';
 import type {
   ForgotPasswordInput,
@@ -23,9 +23,10 @@ import type {
 } from '../validators/auth.validator.js';
 import crypto from 'crypto';
 import {
-  sendEmailVerification,
-  sendPasswordResetEmail,
-} from './email.service.js';
+  sendEmailVerificationNotification,
+  sendPasswordResetNotification,
+  sendWelcomeNotification,
+} from './notification.service.js';
 
 // ===================================
 // TYPES
@@ -146,42 +147,14 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
       return { user, tokens };
     });
 
-    // Send email AFTER transaction, non-blocking
-    const emailStart = Date.now();
-
-    try {
-      sendEmailVerification(result.user.email, verificationToken);
-      logExternalCall(
-        'email',
-        'sendVerification',
-        Date.now() - emailStart,
-        true,
-        {
-          recipient: result.user.email,
-          operation: 'auth.register',
-        }
-      );
-    } catch (emailError) {
-      // Log but don't fail registration
-      logExternalCall(
-        'email',
-        'sendVerification',
-        Date.now() - emailStart,
-        false,
-        {
-          recipient: result.user.email,
-          operation: 'auth.register',
-          errorMessage:
-            emailError instanceof Error ? emailError.message : 'Unknown error',
-        }
-      );
-    }
+    // Send verification email using new notification system
+    sendEmailVerificationNotification(result.user.email, verificationToken);
 
     tracker.success({
       userId: result.user.id,
       email: result.user.email,
       role: result.user.role,
-      emailVerificationSent: true,
+      verificationEmailQueued: true,
     });
 
     return result;
@@ -330,9 +303,13 @@ export const verifyEmail = async (
       },
     });
 
+    // Send welcome email
+    sendWelcomeNotification(user.id);
+
     tracker.success({
       userId: user.id,
       email: user.email,
+      welcomeEmailQueued: true,
     });
 
     return {
@@ -394,35 +371,14 @@ export const resendVerificationEmail = async (
       },
     });
 
-    // Non-blocking email send
-    const emailStart = Date.now();
+    // Send verification email using new notification system
+    sendEmailVerificationNotification(user.email, verificationToken);
 
-    try {
-      sendEmailVerification(user.email, verificationToken);
-      logExternalCall(
-        'email',
-        'sendVerification',
-        Date.now() - emailStart,
-        true,
-        {
-          recipient: user.email,
-          operation: 'auth.resendVerification',
-        }
-      );
-    } catch (emailError) {
-      logExternalCall(
-        'email',
-        'sendVerification',
-        Date.now() - emailStart,
-        false,
-        {
-          recipient: user.email,
-          operation: 'auth.resendVerification',
-          errorMessage:
-            emailError instanceof Error ? emailError.message : 'Unknown error',
-        }
-      );
-    }
+    tracker.success({
+      userId: user.id,
+      email: user.email,
+      verificationEmailQueued: true,
+    });
 
     tracker.success({
       userId: user.id,
@@ -595,36 +551,14 @@ export const forgotPassword = async (
       },
     });
 
-    // Non-blocking email send
-    const emailStart = Date.now();
-    try {
-      sendPasswordResetEmail(user.email, resetToken);
-      logExternalCall(
-        'email',
-        'sendPasswordReset',
-        Date.now() - emailStart,
-        true,
-        {
-          recipient: user.email,
-          operation: 'auth.forgotPassword',
-        }
-      );
-    } catch (emailError) {
-      logExternalCall(
-        'email',
-        'sendPasswordReset',
-        Date.now() - emailStart,
-        false,
-        {
-          recipient: user.email,
-          operation: 'auth.forgotPassword',
-          errorMessage:
-            emailError instanceof Error ? emailError.message : 'Unknown error',
-        }
-      );
-    }
+    // Send password reset email using new notification system
+    sendPasswordResetNotification(user.email, resetToken);
 
-    tracker.success({ userId: user.id, email: user.email });
+    tracker.success({
+      userId: user.id,
+      email: user.email,
+      resetEmailQueued: true,
+    });
 
     return {
       message: 'If an account with that email exists, a reset link was sent.',

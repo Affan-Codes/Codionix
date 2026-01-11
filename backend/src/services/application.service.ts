@@ -12,7 +12,10 @@ import type {
   ListApplicationsQuery,
   UpdateApplicationStatusInput,
 } from '../validators/application.validator.js';
-import { enqueueApplicationStatusEmail } from './emailQueue.service.js';
+import {
+  sendApplicationStatusNotification,
+  sendNewApplicationNotification,
+} from './notification.service.js';
 
 // ===================================
 // PRISMA TYPES
@@ -186,12 +189,16 @@ export const createApplication = async (
       }
     );
 
+    // Send notification to project owner
+    sendNewApplicationNotification(application.id);
+
     tracker.success({
       applicationId: application.id,
       userId,
       projectId,
       projectTitle: application.project.title,
       currentApplicants: application.project.currentApplicants,
+      notificationQueued: true,
     });
 
     return application;
@@ -381,13 +388,11 @@ export const updateApplicationStatus = async (
       status === 'REJECTED' ||
       status === 'UNDER_REVIEW'
     ) {
-      enqueueApplicationStatusEmail({
-        recipientEmail: application.student.email,
-        recipientName: application.student.fullName,
-        projectTitle: application.project.title,
-        status: status as 'ACCEPTED' | 'REJECTED' | 'UNDER_REVIEW',
-        ...(rejectionReason && { rejectionReason }),
-      });
+      sendApplicationStatusNotification(
+        applicationId,
+        status as 'ACCEPTED' | 'REJECTED' | 'UNDER_REVIEW',
+        rejectionReason ?? undefined
+      );
     }
 
     tracker.success({

@@ -1,5 +1,3 @@
-// backend/src/services/emailQueue.service.ts
-
 /**
  * Email Queue Service
  *
@@ -17,7 +15,7 @@
  */
 
 import { logger } from '../utils/logger.js';
-import { sendApplicationStatusEmail } from './email.service.js';
+import { sendEmailSync } from './email.service.js';
 
 // ===================================
 // TYPES
@@ -25,13 +23,16 @@ import { sendApplicationStatusEmail } from './email.service.js';
 
 interface EmailJob {
   id: string;
-  type: 'application_status_change';
+  type: 'email';
   data: {
     recipientEmail: string;
     recipientName: string;
-    projectTitle: string;
-    status: 'ACCEPTED' | 'REJECTED' | 'UNDER_REVIEW';
-    rejectionReason?: string;
+    subject: string;
+    html: string;
+    metadata?: {
+      type: string;
+      [key: string]: any;
+    };
   };
   attempts: number;
   maxAttempts: number;
@@ -57,10 +58,10 @@ const MAX_ATTEMPTS = 3;
 /**
  * Add email to queue (non-blocking)
  */
-export function enqueueApplicationStatusEmail(data: EmailJob['data']): void {
+export function enqueueEmail(data: EmailJob['data']): void {
   const job: EmailJob = {
     id: `${Date.now()}-${Math.random()}`,
-    type: 'application_status_change',
+    type: 'email',
     data,
     attempts: 0,
     maxAttempts: MAX_ATTEMPTS,
@@ -72,7 +73,8 @@ export function enqueueApplicationStatusEmail(data: EmailJob['data']): void {
   logger.info('Email job enqueued', {
     jobId: job.id,
     recipientEmail: job.data.recipientEmail,
-    status: job.data.status,
+    emailType: job.data.metadata?.type || 'unknown',
+    subject: job.data.subject,
     queueSize: queue.length,
     category: 'email_queue',
   });
@@ -152,12 +154,13 @@ async function startProcessing(): Promise<void> {
   isProcessing = true;
 
   while (queue.length > 0) {
-    const job = queue.shift();
+    const job = queue[0];
     if (!job) break;
 
     // Skip jobs that are waiting for retry
     if (job.nextRetryAt && job.nextRetryAt > new Date()) {
       // Move to end of queue
+      queue.shift();
       queue.push(job);
 
       // If all jobs are waiting, stop processing until next interval
@@ -182,20 +185,19 @@ async function processJob(job: EmailJob): Promise<void> {
   const startTime = Date.now();
 
   try {
-    await sendApplicationStatusEmail(
-      job.data.recipientEmail,
-      job.data.recipientName,
-      job.data.projectTitle,
-      job.data.status,
-      job.data.rejectionReason
-    );
+    await sendEmailSync({
+      to: job.data.recipientEmail,
+      subject: job.data.subject,
+      html: job.data.html,
+    });
 
     const duration = Date.now() - startTime;
 
     logger.info('Email job completed', {
       jobId: job.id,
       recipientEmail: job.data.recipientEmail,
-      status: job.data.status,
+      emailType: job.data.metadata?.type || 'unknown',
+      subject: job.data.subject,
       attempts: job.attempts,
       duration: `${duration}ms`,
       category: 'email_queue',
@@ -206,7 +208,8 @@ async function processJob(job: EmailJob): Promise<void> {
     logger.error('Email job failed', {
       jobId: job.id,
       recipientEmail: job.data.recipientEmail,
-      status: job.data.status,
+      emailType: job.data.metadata?.type || 'unknown',
+      subject: job.data.subject,
       attempts: job.attempts,
       maxAttempts: job.maxAttempts,
       duration: `${duration}ms`,
@@ -232,6 +235,7 @@ async function processJob(job: EmailJob): Promise<void> {
       logger.error('Email job permanently failed', {
         jobId: job.id,
         recipientEmail: job.data.recipientEmail,
+        emailType: job.data.metadata?.type || 'unknown',
         attempts: job.attempts,
         category: 'email_queue',
         severity: 'high',
