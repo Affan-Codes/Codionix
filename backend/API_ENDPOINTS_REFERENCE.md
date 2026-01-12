@@ -2090,3 +2090,683 @@ No headers needed
 - '>' 3000ms: degraded (not critical - app works without email)
 
 ---
+
+# Analytics API Documentation
+
+## Overview
+
+The Analytics API provides comprehensive insights into platform performance, user behavior, and business metrics. Data is segmented by user role to provide relevant, actionable insights.
+
+**Base URL:** `http://localhost:5000/api/v1/analytics`
+
+**Rate Limit:** 20 requests per 5 minutes for all analytics endpoints
+
+---
+
+## Authentication
+
+Most analytics endpoints require authentication via Bearer token.
+
+```http
+Authorization: Bearer {access_token}
+```
+
+---
+
+## Table of Contents
+
+1. [Public Endpoints](#public-endpoints)
+2. [Admin Platform Analytics](#admin-platform-analytics)
+3. [Mentor/Employer Analytics](#mentoremployer-analytics)
+4. [Student Analytics](#student-analytics)
+5. [Response Examples](#response-examples)
+
+---
+
+## Public Endpoints
+
+### GET `/public/skill-demand`
+
+**Description:** Public skill demand data (limited to top 10 skills)
+
+**Access:** Public (no auth required)
+
+**Query Parameters:**
+
+- `timeRange` (optional): `7d` | `30d` | `90d` | `all` (default: `30d`)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "timeRange": "30d",
+    "topSkills": [
+      {
+        "skill": "React",
+        "projectCount": 45,
+        "applicationCount": 230,
+        "avgAcceptanceRate": 32.5,
+        "trend": "rising"
+      }
+    ],
+    "emergingSkills": [
+      {
+        "skill": "TypeScript",
+        "recentProjectCount": 12,
+        "growthRate": 150.0
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/public/response-time-benchmarks`
+
+**Description:** Anonymized response time benchmarks
+
+**Access:** Public (no auth required)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "overall": {
+      "avgResponseTime": 28.5,
+      "medianResponseTime": 24.0,
+      "p95ResponseTime": 72.0
+    },
+    "byRole": [
+      {
+        "role": "MENTOR",
+        "avgResponseTime": 26.3,
+        "count": 150
+      }
+    ],
+    "byProjectType": [
+      {
+        "type": "PROJECT",
+        "avgResponseTime": 30.2,
+        "count": 200
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Admin Platform Analytics
+
+All admin endpoints require `ADMIN` role.
+
+### GET `/platform/overview`
+
+**Description:** Complete platform health and performance metrics
+
+**Access:** Admin only
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "users": {
+      "total": 1523,
+      "students": 1200,
+      "mentors": 250,
+      "employers": 73,
+      "verified": 1420,
+      "activeLastWeek": 450,
+      "activeLastMonth": 890,
+      "newThisWeek": 34,
+      "newThisMonth": 156,
+      "growthRate": 12.5
+    },
+    "projects": {
+      "total": 450,
+      "published": 380,
+      "draft": 45,
+      "closed": 25,
+      "avgApplicationsPerProject": 5.2,
+      "newThisWeek": 12,
+      "newThisMonth": 48
+    },
+    "applications": {
+      "total": 2340,
+      "pending": 234,
+      "underReview": 145,
+      "accepted": 890,
+      "rejected": 1071,
+      "acceptanceRate": 38.03,
+      "avgResponseTime": 28.5,
+      "newThisWeek": 45,
+      "newThisMonth": 189
+    },
+    "feedback": {
+      "total": 645,
+      "avgRating": 4.2,
+      "publicFeedback": 512,
+      "newThisWeek": 23,
+      "newThisMonth": 98
+    },
+    "engagement": {
+      "avgApplicationsPerStudent": 1.95,
+      "avgProjectsPerMentor": 1.8,
+      "activeProjects": 320,
+      "completionRate": 27.56
+    }
+  }
+}
+```
+
+---
+
+### GET `/platform/user-growth`
+
+**Description:** User signup and growth trends over time
+
+**Access:** Admin only
+
+**Query Parameters:**
+
+- `timeRange` (optional): `7d` | `30d` | `90d` | `all` (default: `30d`)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "timeRange": "30d",
+    "dataPoints": [
+      {
+        "date": "2024-01-01",
+        "total": 1400,
+        "students": 1100,
+        "mentors": 230,
+        "employers": 70,
+        "newUsers": 12
+      }
+    ],
+    "summary": {
+      "totalGrowth": 156,
+      "avgDailySignups": 5.2,
+      "peakSignupDay": "2024-01-15",
+      "peakSignupCount": 23
+    }
+  }
+}
+```
+
+---
+
+### GET `/platform/engagement`
+
+**Description:** Platform engagement and retention metrics
+
+**Access:** Admin only
+
+**Query Parameters:**
+
+- `timeRange` (optional): `7d` | `30d` | `90d` | `all` (default: `30d`)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "timeRange": "30d",
+    "userActivity": {
+      "dailyActiveUsers": 234,
+      "weeklyActiveUsers": 567,
+      "monthlyActiveUsers": 890,
+      "dau_mau_ratio": 26.29
+    },
+    "actions": {
+      "newUsers": 156,
+      "newProjects": 48,
+      "newApplications": 189,
+      "feedbackGiven": 98,
+      "projectsPublished": 42
+    },
+    "retention": {
+      "weeklyRetention": 42.5,
+      "monthlyRetention": 28.3
+    },
+    "engagement_by_role": [
+      {
+        "role": "STUDENT",
+        "activeUsers": 450,
+        "avgActionsPerUser": 1.95,
+        "engagementRate": 37.5
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/platform/application-funnel`
+
+**Description:** Application conversion funnel and success metrics
+
+**Access:** Admin only
+
+**Query Parameters:**
+
+- `timeRange` (optional): `7d` | `30d` | `90d` | `all` (default: `30d`)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "timeRange": "30d",
+    "funnel": {
+      "totalApplications": 189,
+      "pending": 45,
+      "underReview": 28,
+      "accepted": 67,
+      "rejected": 49
+    },
+    "conversionRates": {
+      "pendingToReview": 76.19,
+      "reviewToAccepted": 57.76,
+      "reviewToRejected": 42.24,
+      "overallAcceptance": 35.45
+    },
+    "timeline": {
+      "avgTimeToFirstReview": 28.5,
+      "avgTimeToDecision": 28.5,
+      "fastestDecision": 2.5,
+      "slowestDecision": 168.0
+    },
+    "byProjectType": [
+      {
+        "type": "PROJECT",
+        "applications": 120,
+        "acceptanceRate": 38.33
+      },
+      {
+        "type": "INTERNSHIP",
+        "applications": 69,
+        "acceptanceRate": 30.43
+      }
+    ],
+    "byDifficulty": [
+      {
+        "level": "BEGINNER",
+        "applications": 45,
+        "acceptanceRate": 42.22
+      },
+      {
+        "level": "INTERMEDIATE",
+        "applications": 98,
+        "acceptanceRate": 35.71
+      },
+      {
+        "level": "ADVANCED",
+        "applications": 46,
+        "acceptanceRate": 28.26
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/platform/skill-demand`
+
+**Description:** Complete skill demand analysis (full data)
+
+**Access:** Admin only
+
+**Query Parameters:**
+
+- `timeRange` (optional): `7d` | `30d` | `90d` | `all` (default: `30d`)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "timeRange": "30d",
+    "topSkills": [
+      {
+        "skill": "React",
+        "projectCount": 45,
+        "applicationCount": 230,
+        "avgAcceptanceRate": 32.5,
+        "trend": "rising"
+      }
+    ],
+    "emergingSkills": [
+      {
+        "skill": "Next.js",
+        "recentProjectCount": 8,
+        "growthRate": 300.0
+      }
+    ],
+    "byRole": {
+      "students": [
+        {
+          "skill": "JavaScript",
+          "userCount": 890
+        }
+      ],
+      "mentors": [
+        {
+          "skill": "React",
+          "projectCount": 45
+        }
+      ]
+    },
+    "skillCombinations": [
+      {
+        "skills": ["React", "Node.js", "PostgreSQL"],
+        "projectCount": 12,
+        "avgStipend": 5000.0
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/platform/feedback-quality`
+
+**Description:** Feedback quality and sentiment analysis
+
+**Access:** Admin only
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "overview": {
+      "totalFeedback": 645,
+      "avgRating": 4.2,
+      "publicFeedbackRate": 79.38
+    },
+    "ratingDistribution": [
+      {
+        "rating": 5,
+        "count": 280,
+        "percentage": 43.41
+      },
+      {
+        "rating": 4,
+        "count": 210,
+        "percentage": 32.56
+      }
+    ],
+    "topMentors": [
+      {
+        "mentorId": "uuid-123",
+        "mentorName": "Jane Mentor",
+        "feedbackGiven": 45,
+        "avgRating": 4.6
+      }
+    ],
+    "commonStrengths": [
+      {
+        "strength": "Strong technical skills",
+        "count": 234
+      }
+    ],
+    "commonImprovements": [
+      {
+        "improvement": "Better communication needed",
+        "count": 145
+      }
+    ],
+    "feedbackTrends": [
+      {
+        "month": "2024-01",
+        "totalFeedback": 98,
+        "avgRating": 4.3
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET `/platform/response-time-benchmarks`
+
+**Description:** Response time benchmarks with mentor identification
+
+**Access:** Admin only
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "overall": {
+      "avgResponseTime": 28.5,
+      "medianResponseTime": 24.0,
+      "p95ResponseTime": 72.0
+    },
+    "byRole": [
+      {
+        "role": "MENTOR",
+        "avgResponseTime": 26.3,
+        "count": 150
+      }
+    ],
+    "byProjectType": [
+      {
+        "type": "PROJECT",
+        "avgResponseTime": 30.2,
+        "count": 200
+      }
+    ],
+    "fastestResponders": [
+      {
+        "mentorId": "uuid-123",
+        "mentorName": "John Fast",
+        "avgResponseTime": 8.5,
+        "applicationCount": 25
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Mentor/Employer Analytics
+
+### GET `/mentor/projects`
+
+**Description:** Comprehensive project performance analytics for current mentor
+
+**Access:** MENTOR or EMPLOYER role only (own data)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "overview": {
+      "totalProjects": 5,
+      "activeProjects": 3,
+      "totalApplicationsReceived": 67,
+      "avgApplicationsPerProject": 13.4,
+      "avgAcceptanceRate": 35.82,
+      "avgResponseTime": 26.5
+    },
+    "projects": [
+      {
+        "projectId": "uuid-123",
+        "projectTitle": "E-commerce Platform",
+        "stats": {
+          "totalApplications": 23,
+          "pendingApplications": 5,
+          "acceptedApplications": 8,
+          "rejectedApplications": 10,
+          "acceptanceRate": 34.78,
+          "avgResponseTime": 24.5,
+          "avgApplicantRating": 4.1,
+          "daysUntilDeadline": 15,
+          "isActive": true
+        },
+        "applicantQuality": {
+          "avgSkillsMatch": 78.5,
+          "topApplicantSkills": [
+            {
+              "skill": "React",
+              "count": 20
+            }
+          ]
+        },
+        "timeline": {
+          "publishedAt": "2024-01-01T00:00:00.000Z",
+          "firstApplicationAt": "2024-01-02T10:30:00.000Z",
+          "lastApplicationAt": "2024-01-15T14:20:00.000Z",
+          "deadline": "2024-02-01T00:00:00.000Z"
+        }
+      }
+    ],
+    "topSkillsRequested": [
+      {
+        "skill": "React",
+        "projectCount": 4
+      }
+    ],
+    "hiringFunnel": {
+      "applied": 67,
+      "underReview": 12,
+      "accepted": 24,
+      "rejected": 31,
+      "conversionRate": 35.82
+    }
+  }
+}
+```
+
+---
+
+## Student Analytics
+
+### GET `/student/applications`
+
+**Description:** Application performance and career insights for current student
+
+**Access:** STUDENT role only (own data)
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "overview": {
+      "totalApplications": 15,
+      "pending": 3,
+      "underReview": 2,
+      "accepted": 5,
+      "rejected": 5,
+      "successRate": 33.33,
+      "avgResponseTime": 28.5
+    },
+    "recentApplications": [
+      {
+        "projectId": "uuid-123",
+        "projectTitle": "E-commerce Platform",
+        "status": "ACCEPTED",
+        "appliedAt": "2024-01-15T10:00:00.000Z",
+        "responseTime": 24.5,
+        "hashedback": true
+      }
+    ],
+    "feedbackSummary": {
+      "totalFeedbackReceived": 8,
+      "avgRating": 4.1,
+      "commonStrengths": [
+        {
+          "strength": "Strong technical skills",
+          "count": 6
+        }
+      ],
+      "commonImprovements": [
+        {
+          "improvement": "More project examples needed",
+          "count": 4
+        }
+      ]
+    },
+    "skillsAnalysis": {
+      "yourSkills": ["React", "Node.js", "TypeScript"],
+      "mostRequestedSkills": [
+        {
+          "skill": "React",
+          "projectCount": 12
+        }
+      ],
+      "skillGaps": ["GraphQL", "Docker", "AWS"],
+      "competitiveSkills": ["React", "Node.js"]
+    },
+    "performance": {
+      "applicationTrend": [
+        {
+          "month": "2024-01",
+          "applied": 8,
+          "accepted": 3,
+          "rejected": 2
+        }
+      ],
+      "bestPerformingSkills": [
+        {
+          "skill": "React",
+          "acceptanceRate": 50.0
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## Error Responses
+
+All endpoints return standard error format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Access denied. Required roles: ADMIN"
+  }
+}
+```
+
+**Common Error Codes:**
+
+- `UNAUTHORIZED` (401): Missing or invalid token
+- `FORBIDDEN` (403): Insufficient permissions
+- `RATE_LIMIT_EXCEEDED` (429): Too many requests
+- `INTERNAL_ERROR` (500): Server error
+
+---

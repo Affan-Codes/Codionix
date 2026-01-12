@@ -5,6 +5,7 @@ import projectRoutes from './project.routes.js';
 import applicationRoutes from './application.routes.js';
 import feedbackRoutes from './feedback.routes.js';
 import healthRoutes from './health.routes.js';
+import analyticsRoutes from './analytics.routes.js';
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.use('/projects', projectRoutes);
 router.use('/applications', applicationRoutes);
 router.use('/feedback', feedbackRoutes);
 router.use('/health', healthRoutes);
+router.use('/analytics', analyticsRoutes);
 
 export default router;
