@@ -97,6 +97,7 @@ export const createApplication = async (
             status: true,
             maxApplicants: true,
             currentApplicants: true,
+            deadline:true
           },
         });
 
@@ -119,6 +120,20 @@ export const createApplication = async (
             outcome: 'validation_error',
           });
           throw new ValidationError('Cannot apply to unpublished projects');
+        }
+
+        // Check if deadline has passed
+        if (project.deadline < new Date()) {
+          logger.warn('Application to expired project', {
+            operation: 'application.create',
+            userId,
+            projectId,
+            deadline: project.deadline.toISOString(),
+            outcome: 'validation_error',
+          });
+          throw new ValidationError(
+            'Cannot apply to projects past their deadline'
+          );
         }
 
         // Check if project has reached max applicants

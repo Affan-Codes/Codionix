@@ -8,6 +8,7 @@ import {
   startEmailQueue,
   stopEmailQueue,
 } from './services/emailQueue.service.js';
+import { startScheduler, stopScheduler } from './jobs/scheduler.service.js';
 
 const PORT = env.PORT;
 
@@ -76,6 +77,9 @@ const startServer = async () => {
     // Start email queue
     startEmailQueue();
 
+    // Start cron job scheduler
+    startScheduler();
+
     // Start Express server
     const server = app.listen(PORT, () => {
       logger.info(`✅ Server running on http://localhost:${PORT}`);
@@ -117,6 +121,9 @@ const startServer = async () => {
           await requestTracker.waitForDrain(30000);
         }
 
+        // Stop cron jobs
+        stopScheduler();
+
         await stopEmailQueue();
 
         stopPoolMonitoring();
@@ -139,6 +146,9 @@ const startServer = async () => {
           shutdownDuration: `${shutdownDuration}ms`,
           category: 'shutdown',
         });
+
+        // Force stop scheduler
+        stopScheduler();
 
         // Force stop email queue
         await stopEmailQueue();

@@ -116,6 +116,7 @@ model Project {
   @@index([projectType])
   @@index([deadline])
   @@index([skills])
+  @@index([deadline, status], name: "deadline_status_idx")
   @@map("projects")
 }
 

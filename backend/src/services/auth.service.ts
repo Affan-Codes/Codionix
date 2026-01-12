@@ -617,25 +617,3 @@ export const resetPassword = async (
     throw error;
   }
 };
-
-/**
- * Clean expired tokens (cron job helper)
- */
-export const cleanupExpiredTokens = async (): Promise<number> => {
-  const tracker = trackOperation('auth.cleanupTokens');
-
-  try {
-    const result = await prisma.refreshToken.deleteMany({
-      where: {
-        OR: [{ expiresAt: { lt: new Date() } }, { isRevoked: true }],
-      },
-    });
-
-    tracker.success({ tokensDeleted: result.count });
-
-    return result.count;
-  } catch (error) {
-    tracker.failure(error);
-    throw error;
-  }
-};
