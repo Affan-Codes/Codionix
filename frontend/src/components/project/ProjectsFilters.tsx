@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -7,15 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { SearchIcon, XIcon, SlidersHorizontalIcon } from "lucide-react";
+import { useState, useEffect, useId } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
-
-interface ProjectsFiltersProps {
-  onFilterChange: (filters: FilterState) => void;
-  onClearFilters: () => void;
-  hasActiveFilters: boolean;
-}
 
 export interface FilterState {
   search: string;
@@ -24,95 +19,107 @@ export interface FilterState {
   status: string;
 }
 
-// Helper to convert "all" to empty string for API
-export const getApiFilters = (filters: FilterState) => {
-  return {
-    search: filters.search || undefined, // Convert empty string to undefined
-    projectType:
-      filters.projectType && filters.projectType !== "all"
-        ? (filters.projectType as "PROJECT" | "INTERNSHIP")
-        : undefined,
-    difficultyLevel:
-      filters.difficultyLevel && filters.difficultyLevel !== "all"
-        ? (filters.difficultyLevel as "BEGINNER" | "INTERMEDIATE" | "ADVANCED")
-        : undefined,
-    status:
-      filters.status && filters.status !== "all"
-        ? (filters.status as "DRAFT" | "PUBLISHED" | "CLOSED")
-        : undefined,
-  };
-};
+interface ProjectsFiltersProps {
+  filters: FilterState;
+  onFilterChange: (filters: FilterState) => void;
+  onClearFilters: () => void;
+  hasActiveFilters: boolean;
+}
 
 export function ProjectsFilters({
+  filters,
   onFilterChange,
   onClearFilters,
   hasActiveFilters,
 }: ProjectsFiltersProps) {
-  const [filters, setFilters] = useState<FilterState>({
-    search: "",
-    projectType: "",
-    difficultyLevel: "",
-    status: "PUBLISHED", // Default to showing only published projects
-  });
+  const uid = useId();
 
-  // Debounce search input (300ms delay)
-  const debouncedSearch = useDebounce(filters.search, 300);
+  // Local state for immediate UI updates (search only)
+  const [localSearch, setLocalSearch] = useState(filters.search);
 
-  // Trigger filter change when debounced search or other filters update
+  // Debounce search for API calls
+  const debouncedSearch = useDebounce(localSearch, 300);
+
+  // Sync local search with prop changes (external resets)
   useEffect(() => {
-    onFilterChange({ ...filters, search: debouncedSearch });
-  }, [
-    debouncedSearch,
-    filters.projectType,
-    filters.difficultyLevel,
-    filters.status,
-  ]);
+    setLocalSearch(filters.search);
+  }, [filters.search]);
+
+  // Notify parent when debounced search changes
+  useEffect(() => {
+    if (debouncedSearch !== filters.search) {
+      onFilterChange({ ...filters, search: debouncedSearch });
+    }
+  }, [debouncedSearch]);
 
   const handleSearchChange = (value: string) => {
-    // Update local state immediately (for UI responsiveness)
-    setFilters({ ...filters, search: value });
-    // API call happens after debounce via useEffect above
+    setLocalSearch(value);
   };
 
-  // Immediate update for non-search filters
   const handleSelectChange = (key: keyof FilterState, value: string) => {
-    const newFilters = { ...filters, [key]: value };
-    setFilters(newFilters);
-  };
-
-  const handleClear = () => {
-    const clearedFilters: FilterState = {
-      search: "",
-      projectType: "",
-      difficultyLevel: "",
-      status: "PUBLISHED",
-    };
-    setFilters(clearedFilters);
-    onClearFilters();
+    onFilterChange({ ...filters, [key]: value });
   };
 
   return (
-    <div className="space-y-4">
-      {/* Search Bar */}
-      <div className="relative">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search projects by title or description..."
-          value={filters.search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="pl-10"
-        />
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontalIcon className="size-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
+            Filters
+          </h3>
+        </div>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearFilters}
+            className="h-7 text-xs gap-1"
+          >
+            <XIcon className="size-3" />
+            Clear
+          </Button>
+        )}
       </div>
 
-      {/* Filter Row */}
-      <div className="flex flex-wrap gap-3">
-        {/* Project Type */}
+      {/* Search */}
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${uid}-search`}
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+        >
+          Search
+        </Label>
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <Input
+            id={`${uid}-search`}
+            placeholder="Title, company, skill..."
+            value={localSearch}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-border" />
+
+      {/* Type */}
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${uid}-type`}
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+        >
+          Type
+        </Label>
         <Select
-          value={filters.projectType}
+          value={filters.projectType || "all"}
           onValueChange={(value) => handleSelectChange("projectType", value)}
         >
-          <SelectTrigger className="w-45">
-            <SelectValue placeholder="Project Type" />
+          <SelectTrigger id={`${uid}-type`} className="w-full h-9">
+            <SelectValue placeholder="All Types" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
@@ -120,16 +127,24 @@ export function ProjectsFilters({
             <SelectItem value="INTERNSHIP">Internship</SelectItem>
           </SelectContent>
         </Select>
+      </div>
 
-        {/* Difficulty Level */}
+      {/* Difficulty */}
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${uid}-difficulty`}
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+        >
+          Difficulty
+        </Label>
         <Select
-          value={filters.difficultyLevel}
+          value={filters.difficultyLevel || "all"}
           onValueChange={(value) =>
             handleSelectChange("difficultyLevel", value)
           }
         >
-          <SelectTrigger className="w-45">
-            <SelectValue placeholder="Difficulty" />
+          <SelectTrigger id={`${uid}-difficulty`} className="w-full h-9">
+            <SelectValue placeholder="All Levels" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Levels</SelectItem>
@@ -138,14 +153,22 @@ export function ProjectsFilters({
             <SelectItem value="ADVANCED">Advanced</SelectItem>
           </SelectContent>
         </Select>
+      </div>
 
-        {/* Status Filter */}
+      {/* Status */}
+      <div className="space-y-2">
+        <Label
+          htmlFor={`${uid}-status`}
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+        >
+          Status
+        </Label>
         <Select
-          value={filters.status}
+          value={filters.status || "all"}
           onValueChange={(value) => handleSelectChange("status", value)}
         >
-          <SelectTrigger className="w-45">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger id={`${uid}-status`} className="w-full h-9">
+            <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
@@ -154,20 +177,23 @@ export function ProjectsFilters({
             <SelectItem value="CLOSED">Closed</SelectItem>
           </SelectContent>
         </Select>
+      </div>
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
+      {/* Clear All Button (Bottom) */}
+      {hasActiveFilters && (
+        <>
+          <div className="border-t border-border" />
           <Button
             variant="outline"
             size="sm"
-            onClick={handleClear}
-            className="ml-auto"
+            onClick={onClearFilters}
+            className="w-full gap-2 h-9"
           >
-            <XIcon className="h-4 w-4 mr-2" />
-            Clear Filters
+            <XIcon className="size-4" />
+            Clear All Filters
           </Button>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
