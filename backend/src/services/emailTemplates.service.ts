@@ -492,7 +492,7 @@ export const createWeeklyDigestEmail = (
   featuredProjects: Array<{
     id: string;
     title: string;
-    type: string;
+    projectType: string;
     skills: string[];
   }>
 ): string => {
@@ -505,7 +505,7 @@ export const createWeeklyDigestEmail = (
         <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 600; color: ${COLORS.primaryText};">
           <a href="${env.FRONTEND_URL}/projects/${project.id}" style="color: ${COLORS.primaryText}; text-decoration: none;">${project.title}</a>
         </p>
-        <p style="margin: 0 0 8px 0; font-size: 13px; color: ${COLORS.secondaryText};">${project.type}</p>
+        <p style="margin: 0 0 8px 0; font-size: 13px; color: ${COLORS.secondaryText};">${project.projectType}</p>
         <p style="margin: 0; font-size: 13px; color: ${COLORS.secondaryText};">
           ${project.skills.slice(0, 3).join(' • ')}
         </p>

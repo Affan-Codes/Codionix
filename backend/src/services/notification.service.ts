@@ -1,8 +1,3 @@
-/**
- * Notifications Service (UPDATED)
- * Added: sendPasswordResetNotification, sendEmailVerificationNotification
- */
-
 import { prisma } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { EMAIL_CONFIG } from '../config/email.js';
@@ -12,8 +7,11 @@ import {
   createApplicationStatusEmail,
   createEmailVerificationTemplate,
   createPasswordResetTemplate,
+  createDeadlineReminderEmail,
+  createWeeklyDigestEmail,
 } from './emailTemplates.service.js';
 import { enqueueEmail } from './emailQueue.service.js';
+import { subDays } from 'date-fns';
 
 /**
  * Send email verification link
@@ -161,6 +159,7 @@ export const sendNewApplicationNotification = async (
                 id: true,
                 email: true,
                 fullName: true,
+                notifyOnApplicationReceived: true,
               },
             },
           },
@@ -173,6 +172,19 @@ export const sendNewApplicationNotification = async (
         applicationId,
         operation: 'notifications.newApplication',
       });
+      return;
+    }
+
+    // Check user preference
+    if (!application.project.createdBy.notifyOnApplicationReceived) {
+      logger.info(
+        'Application notification skipped - user preference disabled',
+        {
+          applicationId,
+          mentorId: application.project.createdBy.id,
+          operation: 'notifications.newApplication',
+        }
+      );
       return;
     }
 
@@ -231,6 +243,7 @@ export const sendApplicationStatusNotification = async (
           select: {
             email: true,
             fullName: true,
+            notifyOnApplicationStatus: true,
           },
         },
         project: {
@@ -249,6 +262,16 @@ export const sendApplicationStatusNotification = async (
     if (!application) {
       logger.warn('Application not found for status notification', {
         applicationId,
+        operation: 'notifications.applicationStatus',
+      });
+      return;
+    }
+
+    // Check user preference
+    if (!application.student.notifyOnApplicationStatus) {
+      logger.info('Status notification skipped - user preference disabled', {
+        applicationId,
+        studentId: application.studentId,
         operation: 'notifications.applicationStatus',
       });
       return;
@@ -298,18 +321,7 @@ export const sendApplicationStatusNotification = async (
 };
 
 /**
- * Remind users about upcoming project deadlines
- *
- * TODO: Enable after implementing user preference system
- *
- * Requirements before enabling:
- * 1. Add NotificationPreferences model to Prisma schema
- * 2. Add "Save Project" or user interest tracking
- * 3. Implement opt-in mechanism in frontend
- *
- * RISK: Sending without opt-in violates CAN-SPAM Act and damages deliverability
- *
- * See notifications.service.ts comments for full explanation
+ * Send deadline reminders to students with applications
  */
 export const sendDeadlineReminders = async (): Promise<void> => {
   if (!EMAIL_CONFIG.FEATURES.DEADLINE_REMINDERS) {
@@ -319,14 +331,109 @@ export const sendDeadlineReminders = async (): Promise<void> => {
     return;
   }
 
-  logger.warn(
-    'Deadline reminders called but not implemented - requires user preferences',
-    {
-      operation: 'notifications.deadlineReminders',
-    }
-  );
+  const startTime = Date.now();
+  try {
+    const now = new Date();
+    const reminders = EMAIL_CONFIG.TIMING.DEADLINE_REMINDERS;
 
-  // Implementation placeholder - DO NOT ENABLE without preference system
+    for (const reminder of reminders) {
+      const targetDate = subDays(now, -reminder.days); // Add days to now
+
+      // Find projects with deadlines matching this reminder window
+      const projects = await prisma.project.findMany({
+        where: {
+          status: 'PUBLISHED',
+          deadline: {
+            gte: new Date(targetDate.setHours(0, 0, 0, 0)),
+            lte: new Date(targetDate.setHours(23, 59, 59, 999)),
+          },
+        },
+        include: {
+          applications: {
+            where: {
+              status: {
+                in: ['PENDING', 'UNDER_REVIEW'],
+              },
+            },
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  email: true,
+                  fullName: true,
+                  notifyOnDeadlineReminder: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      let emailsSent = 0;
+
+      for (const project of projects) {
+        for (const application of project.applications) {
+          // Check user preference
+          if (!application.student.notifyOnDeadlineReminder) {
+            logger.debug(
+              'Deadline reminder skipped - user preference disabled',
+              {
+                studentId: application.student.id,
+                projectId: project.id,
+              }
+            );
+            continue;
+          }
+
+          const html = createDeadlineReminderEmail(
+            application.student.fullName,
+            project.title,
+            project.id,
+            reminder.days
+          );
+
+          enqueueEmail({
+            recipientEmail: application.student.email,
+            recipientName: application.student.fullName,
+            subject: `⏰ ${reminder.days} Day${reminder.days === 1 ? '' : 's'} Until Deadline: "${project.title}"`,
+            html,
+            metadata: {
+              type: EMAIL_CONFIG.NOTIFICATIONS.DEADLINE_REMINDER,
+              projectId: project.id,
+              studentId: application.student.id,
+              daysRemaining: reminder.days,
+            },
+          });
+
+          emailsSent++;
+        }
+      }
+
+      logger.info(`Deadline reminders sent for ${reminder.label}`, {
+        projectsChecked: projects.length,
+        emailsSent,
+        daysRemaining: reminder.days,
+        operation: 'notifications.deadlineReminders',
+      });
+    }
+
+    const duration = Date.now() - startTime;
+
+    logger.info('Deadline reminder job completed', {
+      duration: `${duration}ms`,
+      operation: 'notifications.deadlineReminders',
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    logger.error('Failed to send deadline reminders', {
+      duration: `${duration}ms`,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      operation: 'notifications.deadlineReminders',
+    });
+
+    throw error;
+  }
 };
 
 /**
@@ -343,12 +450,146 @@ export const sendWeeklyDigests = async (): Promise<void> => {
     return;
   }
 
-  logger.warn(
-    'Weekly digest called but not implemented - requires user preferences',
-    {
-      operation: 'notifications.weeklyDigest',
-    }
-  );
+  const startTime = Date.now();
 
-  // Implementation placeholder - DO NOT ENABLE without preference system
+  try {
+    const now = new Date();
+    const weekAgo = subDays(now, 7);
+
+    // Get users who opted in for weekly digest
+    const users = await prisma.user.findMany({
+      where: {
+        notifyOnWeeklyDigest: true,
+        isEmailVerified: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+      },
+    });
+
+    let emailsSent = 0;
+
+    for (const user of users) {
+      // Aggregate stats based on user role
+      const stats = {
+        newProjects: 0,
+        pendingApplications: 0,
+        receivedFeedback: 0,
+      };
+
+      if (user.role === 'STUDENT') {
+        // Student stats
+        const [newProjects, pendingApps, newFeedback] = await Promise.all([
+          prisma.project.count({
+            where: {
+              status: 'PUBLISHED',
+              createdAt: { gte: weekAgo },
+            },
+          }),
+          prisma.application.count({
+            where: {
+              studentId: user.id,
+              status: { in: ['PENDING', 'UNDER_REVIEW'] },
+            },
+          }),
+          prisma.feedback.count({
+            where: {
+              application: { studentId: user.id },
+              createdAt: { gte: weekAgo },
+            },
+          }),
+        ]);
+
+        stats.newProjects = newProjects;
+        stats.pendingApplications = pendingApps;
+        stats.receivedFeedback = newFeedback;
+      } else {
+        // Mentor/Employer stats
+        const [newApplications, pendingApps, feedbackGiven] = await Promise.all(
+          [
+            prisma.application.count({
+              where: {
+                project: { createdById: user.id },
+                appliedAt: { gte: weekAgo },
+              },
+            }),
+            prisma.application.count({
+              where: {
+                project: { createdById: user.id },
+                status: 'PENDING',
+              },
+            }),
+            prisma.feedback.count({
+              where: {
+                mentorId: user.id,
+                createdAt: { gte: weekAgo },
+              },
+            }),
+          ]
+        );
+
+        stats.newProjects = newApplications;
+        stats.pendingApplications = pendingApps;
+        stats.receivedFeedback = feedbackGiven;
+      }
+
+      // Get featured projects
+      const featuredProjects = await prisma.project.findMany({
+        where: {
+          status: 'PUBLISHED',
+          deadline: { gte: now },
+          createdAt: { gte: weekAgo },
+        },
+        select: {
+          id: true,
+          title: true,
+          projectType: true,
+          skills: true,
+        },
+        take: 3,
+        orderBy: { currentApplicants: 'desc' },
+      });
+
+      const html = createWeeklyDigestEmail(
+        user.fullName,
+        stats,
+        featuredProjects
+      );
+
+      enqueueEmail({
+        recipientEmail: user.email,
+        recipientName: user.fullName,
+        subject: '📊 Your Weekly Codionix Summary',
+        html,
+        metadata: {
+          type: EMAIL_CONFIG.NOTIFICATIONS.WEEKLY_DIGEST,
+          userId: user.id,
+        },
+      });
+
+      emailsSent++;
+    }
+
+    const duration = Date.now() - startTime;
+
+    logger.info('Weekly digest job completed', {
+      duration: `${duration}ms`,
+      usersProcessed: users.length,
+      emailsSent,
+      operation: 'notifications.weeklyDigest',
+    });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    logger.error('Failed to send weekly digests', {
+      duration: `${duration}ms`,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      operation: 'notifications.weeklyDigest',
+    });
+
+    throw error;
+  }
 };

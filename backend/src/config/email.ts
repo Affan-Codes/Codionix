@@ -51,7 +51,7 @@ export const EMAIL_CONFIG = {
     APPLICATION_ALERTS: true,
     STATUS_UPDATES: true,
     DEADLINE_REMINDERS: true,
-    WEEKLY_DIGEST: false, // Disabled for now
+    WEEKLY_DIGEST: true,
   },
 } as const;
 

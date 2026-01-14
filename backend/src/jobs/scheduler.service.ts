@@ -24,6 +24,7 @@ import {
   cleanupExpiredVerificationTokens,
   cleanupExpiredPasswordResetTokens,
 } from './auth.jobs.js';
+import { runDeadlineReminders, runWeeklyDigests } from './notification.jobs.js';
 
 // ===================================
 // TYPES
@@ -86,6 +87,24 @@ const jobConfigs: JobConfig[] = [
     name: 'cleanup-password-reset-tokens',
     cronTime: '0 4 * * *', // Daily at 4:00 AM UTC
     onTick: cleanupExpiredPasswordResetTokens,
+    enabled: true,
+    timezone: 'UTC',
+    runOnInit: false,
+    maxRetries: 3,
+  },
+  {
+    name: 'send-deadline-reminders',
+    cronTime: '0 8 * * *', // Daily at 8:00 AM UTC
+    onTick: runDeadlineReminders,
+    enabled: true,
+    timezone: 'UTC',
+    runOnInit: false,
+    maxRetries: 3,
+  },
+  {
+    name: 'send-weekly-digests',
+    cronTime: '0 9 * * 0', // Every Sunday at 9:00 AM UTC
+    onTick: runWeeklyDigests,
     enabled: true,
     timezone: 'UTC',
     runOnInit: false,
