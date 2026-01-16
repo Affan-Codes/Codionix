@@ -2,21 +2,6 @@ import { randomUUID } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger.js';
 
-// Extend Express Request to include correlation data
-declare global {
-  namespace Express {
-    interface Request {
-      correlationId?: string;
-      startTime?: number;
-      user?: {
-        userId: string;
-        email: string;
-        role: string;
-      };
-    }
-  }
-}
-
 /**
  * Request correlation middleware
  * CRITICAL: Must be the FIRST middleware in the chain

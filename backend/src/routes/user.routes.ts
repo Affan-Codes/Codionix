@@ -30,13 +30,6 @@ router.patch(
 );
 
 /**
- * @route   POST /api/v1/users/me/avatar
- * @desc    Upload profile picture
- * @access  Protected
- */
-router.post('/me/avatar', userController.uploadAvatar);
-
-/**
  * @route   GET /api/v1/users/me/notification-preferences
  * @desc    Get current user's notification preferences
  * @access  Protected

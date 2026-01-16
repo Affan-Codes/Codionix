@@ -9,6 +9,7 @@ import {
   stopEmailQueue,
 } from './services/emailQueue.service.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.service.js';
+import { initializeCloudinary } from './config/upload.js';
 
 const PORT = env.PORT;
 
@@ -73,6 +74,9 @@ const startServer = async () => {
 
     // Start pool monitoring
     startPoolMonitoring();
+
+    // Initialize Cloudinary
+    initializeCloudinary();
 
     // Start email queue
     startEmailQueue();

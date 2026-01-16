@@ -3,19 +3,6 @@ import { UnauthorizedError } from '../utils/errors.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { prisma } from '../config/database.js';
 
-// Extend Express Request to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        email: string;
-        role: string;
-      };
-    }
-  }
-}
-
 /**
  * Authenticate user via JWT token
  */

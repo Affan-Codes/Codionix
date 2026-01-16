@@ -32,33 +32,3 @@ export const updateCurrentUserProfile = asyncHandler(
     ApiResponse.success(res, updatedProfile);
   }
 );
-
-/**
- * Upload profile picture
- * POST /api/v1/users/me/avatar
- */
-export const uploadAvatar = asyncHandler(
-  async (req: Request, res: Response) => {
-    // TODO: Implement file upload with multer later
-    // For now, accept URL in body
-    const userId = req.user!.userId;
-    const { profilePictureUrl } = req.body;
-
-    if (!profilePictureUrl) {
-      ApiResponse.error(
-        res,
-        'Profile picture URL is required',
-        400,
-        'VALIDATION_ERROR'
-      );
-      return;
-    }
-
-    const updatedProfile = await userService.updateProfilePicture(
-      userId,
-      profilePictureUrl
-    );
-
-    ApiResponse.success(res, updatedProfile);
-  }
-);
