@@ -2,6 +2,7 @@ import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
 import { UPLOAD_CONFIG } from '../config/upload.js';
 import { logger, trackOperation } from '../utils/logger.js';
 import { ValidationError } from '../utils/errors.js';
+import * as imageCompression from './imageCompression.service.js';
 
 // ===================================
 // TYPES
@@ -95,6 +96,38 @@ export async function uploadFile(
     validateFileType(file.mimetype, uploadType);
     validateFileSize(file.size, uploadType);
 
+    // Compress image if it's an avatar
+    let uploadBuffer = file.buffer;
+    let finalMimetype = file.mimetype;
+
+    if (uploadType === 'avatar') {
+      const shouldCompress = await imageCompression.shouldCompress(
+        file.buffer,
+        file.mimetype
+      );
+
+      if (shouldCompress) {
+        logger.info('Compressing avatar before upload', {
+          filename: file.originalname,
+          originalSize: `${(file.size / 1024).toFixed(2)}KB`,
+          operation: 'upload.file',
+        });
+
+        const compressionResult = await imageCompression.compressAvatar(
+          file.buffer,
+          file.originalname
+        );
+
+        uploadBuffer = compressionResult.buffer;
+        finalMimetype = 'image/jpeg';
+
+        logger.info('Compression complete', {
+          stats: imageCompression.getCompressionStats(compressionResult),
+          operation: 'upload.file',
+        });
+      }
+    }
+
     // Determine folder and options
     const folder =
       uploadType === 'avatar'
@@ -127,7 +160,7 @@ export async function uploadFile(
         }
       );
 
-      uploadStream.end(file.buffer);
+      uploadStream.end(uploadBuffer);
     });
 
     const uploadResult: UploadResult = {
