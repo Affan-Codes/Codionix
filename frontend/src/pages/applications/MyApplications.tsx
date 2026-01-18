@@ -214,7 +214,7 @@ export default function MyApplications() {
 
   return (
     <Layout maxWidth="full">
-      <div className="h-[calc(100vh-4rem)] flex flex-col overflow-hidden">
+      <div className="flex flex-col overflow-hidden">
         {/* Command Bar */}
         <div className="shrink-0 border-b border-border bg-background">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 gap-4">

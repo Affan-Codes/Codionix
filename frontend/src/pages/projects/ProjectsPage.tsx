@@ -232,8 +232,8 @@ export default function ProjectsPage() {
   }
 
   return (
-    <Layout>
-      <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <Layout maxWidth="full">
+      <div className="flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b border-border bg-card/50 backdrop-blur-sm">
           <div className="px-4 sm:px-6 py-4 space-y-4">
