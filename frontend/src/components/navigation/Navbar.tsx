@@ -5,296 +5,389 @@ import {
   FileTextIcon,
   LayoutDashboardIcon,
   LogOutIcon,
-  MenuIcon,
   PlusCircleIcon,
   UserIcon,
-  XIcon,
+  TargetIcon,
+  BellIcon,
+  ChevronDownIcon,
+  MenuIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { ThemeToggle } from "../theme/ThemeToggle";
-
-interface NavLink {
-  label: string;
-  href: string;
-  icon: React.ElementType;
-  roles?: string[];
-}
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { Sheet, SheetContent } from "../ui/sheet";
+import { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
+import { Badge } from "../ui/badge";
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navLinks: NavLink[] = [
-    {
-      label: "Dashboard",
-      href: ROUTES.DASHBOARD,
-      icon: LayoutDashboardIcon,
-    },
-    {
-      label: "Projects",
-      href: ROUTES.PROJECTS,
-      icon: BriefcaseIcon,
-    },
-    {
-      label: "Create Project",
-      href: ROUTES.CREATE_PROJECT,
-      icon: PlusCircleIcon,
-      roles: ["MENTOR", "EMPLOYER"],
-    },
-    {
-      label: "My Applications",
-      href: ROUTES.APPLICATIONS,
-      icon: FileTextIcon,
-      roles: ["STUDENT"],
-    },
-    {
-      label: "Profile",
-      href: ROUTES.PROFILE,
-      icon: UserIcon,
-    },
-  ];
-
-  const visibleLinks = navLinks.filter((link) => {
-    if (!link.roles) return true;
-    return user && link.roles.includes(user.role);
-  });
+  const isActiveLink = (href: string) => {
+    if (href === ROUTES.DASHBOARD) return location.pathname === href;
+    return location.pathname.startsWith(href);
+  };
 
   const handleLogout = async () => {
     try {
       await logout();
       navigate(ROUTES.HOME);
     } catch (error) {
-      // Error handle by mutation
+      // Error handled
     }
   };
 
-  const isActiveLink = (href: string) => {
-    if (href === ROUTES.DASHBOARD) {
-      return location.pathname === href;
+  // Workspace intelligence
+  const workspace = useMemo(() => {
+    if (!user) return null;
+
+    const isCreator = user.role === "MENTOR" || user.role === "EMPLOYER";
+    const isStudent = user.role === "STUDENT";
+
+    // TODO: Replace with real data hooks when notifications system is built
+    const unreadNotifications = 0;
+
+    // TODO: Replace with real application data when status tracking is implemented
+    const urgentApplications = isStudent ? 0 : 0;
+
+    return {
+      isCreator,
+      isStudent,
+      unreadNotifications,
+      urgentApplications,
+      primaryAction: isCreator
+        ? {
+            label: "New Project",
+            icon: PlusCircleIcon,
+            route: ROUTES.CREATE_PROJECT,
+          }
+        : {
+            label: "Discover",
+            icon: TargetIcon,
+            route: ROUTES.PROJECTS,
+          },
+    };
+  }, [user]);
+
+  // Navigation structure
+  const navigation = useMemo(() => {
+    if (!user || !workspace) return [];
+
+    const base: Array<{
+      label: string;
+      icon: typeof LayoutDashboardIcon;
+      route: string;
+    }> = [
+      {
+        label: "Hub",
+        icon: LayoutDashboardIcon,
+        route: ROUTES.DASHBOARD,
+      },
+      {
+        label: "Projects",
+        icon: BriefcaseIcon,
+        route: ROUTES.PROJECTS,
+      },
+    ];
+
+    if (workspace.isStudent) {
+      base.push({
+        label: "Applications",
+        icon: FileTextIcon,
+        route: ROUTES.APPLICATIONS,
+        // TODO: Add urgent badge when application status tracking is implemented
+        // badge: workspace.urgentApplications > 0 ? workspace.urgentApplications : null
+      });
     }
-    return location.pathname.startsWith(href);
-  };
+
+    return base;
+  }, [user, workspace]);
+
+  if (!isAuthenticated || !user || !workspace) {
+    // GUEST NAVBAR
+    return (
+      <nav className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-border bg-background/95 backdrop-blur-xl">
+        <div className="h-full max-w-480 mx-auto px-4 sm:px-6 flex items-center justify-between">
+          <Link to={ROUTES.HOME} className="flex items-center gap-2.5 group">
+            <div className="size-8 rounded-lg bg-linear-to-br from-primary via-primary to-primary/70 flex items-center justify-center shadow-sm transition-all duration-300 group-hover:shadow-lg group-hover:scale-105">
+              <span className="text-sm font-bold text-primary-foreground">
+                C
+              </span>
+            </div>
+            <span className="text-sm font-bold text-foreground transition-colors duration-200 group-hover:text-primary">
+              Codionix
+            </span>
+          </Link>
+
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(ROUTES.LOGIN)}
+            >
+              Login
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => navigate(ROUTES.REGISTER)}
+              className="shadow-sm hover:shadow transition-shadow"
+            >
+              Get Started
+            </Button>
+          </div>
+        </div>
+      </nav>
+    );
+  }
 
   return (
     <>
-      {/* Main Navbar */}
-      <nav className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-lg supports-backdrop-filter:bg-background/60 shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            {/* Logo */}
-            <Link
-              to={isAuthenticated ? ROUTES.DASHBOARD : ROUTES.HOME}
-              className="flex items-center gap-3 group"
-            >
-              <div className="flex items-center justify-center size-10 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 shadow-md transition-all duration-300 group-hover:shadow-lg group-hover:scale-105">
-                <span className="text-xl font-bold text-white">C</span>
-              </div>
-              <span className="text-xl font-bold text-foreground tracking-tight group-hover:text-primary transition-colors">
-                Codionix
+      {/* NAVIGATION STRIP */}
+      <nav className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-border bg-background/95 backdrop-blur-xl">
+        <div className="h-full max-w-480 mx-auto flex items-stretch justify-between">
+          {/* IDENTITY */}
+          <Link
+            to={ROUTES.DASHBOARD}
+            className="flex items-center gap-2.5 px-5 border-r border-border group relative overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-linear-to-r from-primary/0 via-primary/5 to-primary/0 translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+            <div className="relative size-7 rounded-lg bg-linear-to-br from-primary via-primary to-primary/70 flex items-center justify-center shadow-sm transition-all duration-300 group-hover:shadow-lg group-hover:scale-110">
+              <span className="text-xs font-bold text-primary-foreground">
+                C
               </span>
-            </Link>
+            </div>
+            <span className="relative text-sm font-bold text-foreground transition-colors duration-200 group-hover:text-primary">
+              Codionix
+            </span>
+          </Link>
 
-            {/* Desktop Navigation */}
-            {isAuthenticated && (
-              <div className="hidden md:flex md:items-center md:gap-1">
-                {visibleLinks.map((link) => {
-                  const Icon = link.icon;
-                  const isActive = isActiveLink(link.href);
-                  return (
-                    <Link
-                      key={link.href}
-                      to={link.href}
-                      className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${
-                        isActive
-                          ? "bg-primary/10 text-primary shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                      }`}
-                    >
-                      <Icon className="size-4" />
-                      <span>{link.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+          {/* WORKSPACE ZONE */}
+          <div className="hidden lg:flex items-center gap-2 px-4 flex-1 min-w-0">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              const active = isActiveLink(item.route);
+              return (
+                <Link
+                  key={item.route}
+                  to={item.route}
+                  className={cn(
+                    "relative flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-medium transition-all duration-300 group",
+                    active
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  <span>{item.label}</span>
+                  <span
+                    className={`absolute bottom-0 left-1/2 h-0.5 w-[70%] rounded-full -translate-x-1/2 origin-center transition-transform duration-300 scale-x-0 group-hover:scale-x-100 ${
+                      active ? "scale-x-100 bg-primary" : "bg-muted-foreground"
+                    }`}
+                  />
+                </Link>
+              );
+            })}
+          </div>
 
-            {/* Desktop Actions */}
-            <div className="hidden md:flex md:items-center md:gap-3">
-              <ThemeToggle />
-
-              {isAuthenticated ? (
-                <>
-                  {/* User Badge */}
-                  <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-2 border border-border/50">
-                    <div className="flex items-center justify-center size-7 rounded-md bg-linear-to-br from-indigo-500 to-purple-600 text-white text-xs font-semibold">
-                      {user?.fullName.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="text-sm font-medium text-foreground max-w-32 truncate">
-                      {user?.fullName}
-                    </span>
-                  </div>
-
-                  {/* Logout Button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleLogout}
-                    className="gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/20 transition-all duration-200"
-                  >
-                    <LogOutIcon className="size-4" />
-                    <span>Logout</span>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(ROUTES.LOGIN)}
-                    className="hover:bg-accent hover:border-accent-foreground/20"
-                  >
-                    Login
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(ROUTES.REGISTER)}
-                    className="shadow-sm hover:shadow-md transition-all duration-200"
-                  >
-                    Sign Up
-                  </Button>
-                </>
-              )}
+          {/* ACTION ZONE */}
+          <div className="flex items-stretch shrink-0 border-l border-border">
+            {/* Primary CTA (Desktop Only) */}
+            <div className="hidden sm:flex items-center px-3">
+              <Button
+                onClick={() => navigate(workspace.primaryAction.route)}
+                size="sm"
+                className="h-9 gap-2 text-xs font-semibold shadow-sm transition-all duration-200 hover:shadow-md"
+              >
+                <workspace.primaryAction.icon className="size-4" />
+                <span className="hidden lg:inline">
+                  {workspace.primaryAction.label}
+                </span>
+              </Button>
             </div>
 
-            {/* Mobile Menu Button */}
-            <div className="flex items-center gap-2 md:hidden">
+            {/* DESKTOP: System Controls + User Menu */}
+            <div className="hidden lg:flex items-center gap-2 px-3 border-l border-border">
+              {/* Notifications - TODO: implement notification system */}
+              <button
+                disabled
+                className="relative h-9 w-9 rounded-lg transition-all duration-200 flex items-center justify-center group disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Notifications (coming soon)"
+              >
+                <BellIcon className="size-4 text-muted-foreground" />
+                {/* TODO: Add unread indicator when notification system is built */}
+                {/* {workspace.unreadNotifications > 0 && (
+                  <span className="absolute top-1 right-1 size-2 rounded-full bg-destructive animate-pulse" />
+                )} */}
+              </button>
+
+              <ThemeToggle />
+
+              {/* User Menu (Desktop Only) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 h-9 px-2 rounded-lg transition-all duration-200 hover:bg-accent group">
+                    <div className="size-7 rounded-lg bg-linear-to-br from-primary via-primary to-primary/70 flex items-center justify-center text-xs font-bold text-primary-foreground transition-transform duration-200 group-hover:scale-110 shadow-sm">
+                      {user.fullName.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-xs font-semibold text-foreground truncate max-w-24 hidden xl:block">
+                      {user.fullName.split(" ")[0]}
+                    </span>
+                    <ChevronDownIcon className="size-3 text-muted-foreground transition-transform duration-200 group-hover:rotate-180" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <div className="flex items-center gap-3 p-3">
+                    <div className="size-10 rounded-xl bg-linear-to-br from-primary via-primary to-primary/70 flex items-center justify-center text-base font-bold text-primary-foreground shadow-md shrink-0">
+                      {user.fullName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {user.fullName}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link to={ROUTES.PROFILE} className="flex items-center">
+                      <UserIcon className="size-4" />
+                      Profile
+                    </Link>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    variant="destructive"
+                    className="cursor-pointer"
+                  >
+                    <LogOutIcon className="size-4" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* MOBILE: Minimal Controls */}
+            <div className="lg:hidden flex items-center gap-1 px-2">
               <ThemeToggle />
               <Button
                 variant="ghost"
-                size="icon"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="hover:bg-accent"
+                size="sm"
+                onClick={() => setMobileOpen(true)}
+                className="h-9 w-9 p-0"
               >
-                {mobileMenuOpen ? (
-                  <XIcon className="size-6" />
-                ) : (
-                  <MenuIcon className="size-6" />
-                )}
+                <MenuIcon className="size-5" />
               </Button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Mobile Menu Overlay */}
-      {mobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm md:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Mobile Menu Slide-in Panel */}
-      <div
-        className={`fixed top-16 right-0 bottom-0 z-40 w-80 max-w-[85vw] bg-background border-l shadow-2xl transform transition-transform duration-300 ease-out md:hidden ${
-          mobileMenuOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <div className="h-full overflow-y-auto">
-          <div className="space-y-6 p-6">
-            {isAuthenticated ? (
-              <>
-                {/* User Info Card */}
-                <div className="rounded-xl bg-linear-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 p-4 border border-indigo-100 dark:border-indigo-900/30">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center size-12 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 text-white text-lg font-bold shadow-md">
-                      {user?.fullName.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {user?.fullName}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {user?.email}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Navigation Links */}
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-3">
-                    Navigation
-                  </p>
-                  {visibleLinks.map((link) => {
-                    const Icon = link.icon;
-                    const isActive = isActiveLink(link.href);
-                    return (
-                      <Link
-                        key={link.href}
-                        to={link.href}
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                          isActive
-                            ? "bg-primary/10 text-primary shadow-sm"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                        }`}
-                      >
-                        <Icon className="size-5" />
-                        <span>{link.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-
-                {/* Logout Button */}
-                <div className="pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleLogout();
-                    }}
-                    className="w-full gap-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/20 transition-all duration-200"
-                  >
-                    <LogOutIcon className="size-4" />
-                    <span>Logout</span>
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Guest Actions */}
-                <div className="space-y-3">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      navigate(ROUTES.LOGIN);
-                    }}
-                  >
-                    Login
-                  </Button>
-                  <Button
-                    className="w-full shadow-sm"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      navigate(ROUTES.REGISTER);
-                    }}
-                  >
-                    Sign Up
-                  </Button>
-                </div>
-              </>
-            )}
+      {/* MOBILE DRAWER */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="right" className="w-80 flex flex-col pt-6 pb-2">
+          {/* User Identity */}
+          <div className="px-6 py-4 border-b border-border shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-linear-to-br from-primary via-primary to-primary/70 flex items-center justify-center text-base font-bold text-primary-foreground shadow-lg">
+                {user.fullName.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">
+                  {user.fullName}
+                </p>
+                <Badge variant="outline" className="mt-1 text-[10px] uppercase">
+                  {user.role}
+                </Badge>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Navigation */}
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="space-y-1">
+              {navigation.map((item) => {
+                const Icon = item.icon;
+                const active = isActiveLink(item.route);
+                return (
+                  <Link
+                    key={item.route}
+                    to={item.route}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+                      active
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                    )}
+                  >
+                    <Icon className="size-5" />
+                    <span className="flex-1">{item.label}</span>
+                    {active && (
+                      <div className="size-1.5 rounded-full bg-primary" />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Primary Action */}
+            <div className="mt-6">
+              <Button
+                onClick={() => {
+                  navigate(workspace.primaryAction.route);
+                  setMobileOpen(false);
+                }}
+                className="w-full gap-2 h-11 shadow-sm cursor-pointer"
+              >
+                <workspace.primaryAction.icon className="size-4" />
+                {workspace.primaryAction.label}
+              </Button>
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="px-6 py-4 border-t border-border space-y-2 shrink-0">
+            <Link
+              to={ROUTES.PROFILE}
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            >
+              <UserIcon className="size-4" />
+              Profile
+            </Link>
+
+            <Button
+              onClick={() => {
+                handleLogout();
+                setMobileOpen(false);
+              }}
+              variant="destructive"
+              className="w-full gap-2 cursor-pointer"
+            >
+              <LogOutIcon className="size-4" />
+              Logout
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
