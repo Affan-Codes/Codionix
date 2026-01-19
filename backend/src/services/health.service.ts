@@ -214,6 +214,69 @@ async function checkEmail(): Promise<DependencyHealth> {
   }
 }
 
+/**
+ * Check Socket.io server health
+ */
+async function checkSocketServer(): Promise<DependencyHealth> {
+  const startTime = Date.now();
+
+  try {
+    // Import dynamically to avoid circular dependency
+    const { getSocketHealth } = await import('../config/socket.js');
+
+    const health = await getSocketHealth();
+    const responseTime = Date.now() - startTime;
+
+    if (!health.healthy) {
+      return {
+        name: 'socket_server',
+        status: 'unhealthy',
+        responseTime,
+        message: 'Socket.io server not initialized',
+        details: health,
+      };
+    }
+
+    // Determine status based on metrics
+    let status: HealthStatus = 'healthy';
+    let message = 'Socket.io server operational';
+
+    if (health.activeConnections > 1000) {
+      status = 'degraded';
+      message = `High connection count (${health.activeConnections})`;
+    }
+
+    return {
+      name: 'socket_server',
+      status,
+      responseTime,
+      message,
+      details: {
+        activeConnections: health.activeConnections,
+        activeRooms: health.activeRooms,
+      },
+    };
+  } catch (error) {
+    const responseTime = Date.now() - startTime;
+
+    logger.error('Socket.io health check failed', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      responseTime: `${responseTime}ms`,
+    });
+
+    return {
+      name: 'socket_server',
+      status: 'degraded', // Not critical - app works without websockets
+      responseTime,
+      message:
+        error instanceof Error ? error.message : 'Socket.io server unavailable',
+      details: {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+    };
+  }
+}
+
 // ===================================
 // AGGREGATED HEALTH CHECK
 // ===================================
@@ -233,12 +296,13 @@ export async function runHealthChecks(): Promise<HealthCheckResult> {
   const startTime = Date.now();
 
   // Run all checks in parallel (don't fail-fast)
-  const [databaseHealth, emailHealth] = await Promise.all([
+  const [databaseHealth, emailHealth, socketHealth] = await Promise.all([
     checkDatabase(),
     checkEmail(),
+    checkSocketServer(),
   ]);
 
-  const dependencies = [databaseHealth, emailHealth];
+  const dependencies = [databaseHealth, emailHealth, socketHealth];
 
   // Determine overall status
   const hasUnhealthy = dependencies.some((d) => d.status === 'unhealthy');

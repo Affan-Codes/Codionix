@@ -98,7 +98,6 @@ export async function uploadFile(
 
     // Compress image if it's an avatar
     let uploadBuffer = file.buffer;
-    let finalMimetype = file.mimetype;
 
     if (uploadType === 'avatar') {
       const shouldCompress = await imageCompression.shouldCompress(
@@ -119,7 +118,6 @@ export async function uploadFile(
         );
 
         uploadBuffer = compressionResult.buffer;
-        finalMimetype = 'image/jpeg';
 
         logger.info('Compression complete', {
           stats: imageCompression.getCompressionStats(compressionResult),

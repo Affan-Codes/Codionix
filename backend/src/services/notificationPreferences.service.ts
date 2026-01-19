@@ -12,6 +12,7 @@ export interface NotificationPreferences {
   notifyOnApplicationStatus: boolean;
   notifyOnDeadlineReminder: boolean;
   notifyOnWeeklyDigest: boolean;
+  notifyOnNewMessage: boolean;
 }
 
 // ===================================
@@ -36,6 +37,7 @@ export const getNotificationPreferences = async (
         notifyOnApplicationStatus: true,
         notifyOnDeadlineReminder: true,
         notifyOnWeeklyDigest: true,
+        notifyOnNewMessage: true,
       },
     });
 
@@ -91,6 +93,9 @@ export const updateNotificationPreferences = async (
       ...(data.notifyOnWeeklyDigest !== undefined && {
         notifyOnWeeklyDigest: data.notifyOnWeeklyDigest,
       }),
+      ...(data.notifyOnNewMessage !== undefined && {
+        notifyOnNewMessage: data.notifyOnNewMessage,
+      }),
     };
 
     // Update preferences
@@ -102,6 +107,7 @@ export const updateNotificationPreferences = async (
         notifyOnApplicationStatus: true,
         notifyOnDeadlineReminder: true,
         notifyOnWeeklyDigest: true,
+        notifyOnNewMessage: true,
       },
     });
 
@@ -130,6 +136,7 @@ export const isNotificationEnabled = async (
     | 'applicationStatus'
     | 'deadlineReminder'
     | 'weeklyDigest'
+    | 'newMessage'
 ): Promise<boolean> => {
   try {
     const user = await prisma.user.findUnique({
@@ -139,6 +146,7 @@ export const isNotificationEnabled = async (
         notifyOnApplicationStatus: true,
         notifyOnDeadlineReminder: true,
         notifyOnWeeklyDigest: true,
+        notifyOnNewMessage: true,
       },
     });
 
@@ -153,6 +161,8 @@ export const isNotificationEnabled = async (
         return user.notifyOnDeadlineReminder;
       case 'weeklyDigest':
         return user.notifyOnWeeklyDigest;
+      case 'newMessage':
+        return user.notifyOnNewMessage;
       default:
         return false;
     }

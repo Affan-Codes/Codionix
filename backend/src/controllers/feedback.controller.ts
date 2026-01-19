@@ -122,7 +122,7 @@ export const getFeedbackForApplication = asyncHandler(
     const { applicationId } = req.params;
     const userId = req.user!.userId;
 
-    if (!applicationId) {
+    if (!applicationId || typeof applicationId !== 'string') {
       throw new ForbiddenError('applicationId is required');
     }
 

@@ -74,6 +74,7 @@ model User {
   notifyOnApplicationStatus   Boolean @default(true)
   notifyOnDeadlineReminder    Boolean @default(true)
   notifyOnWeeklyDigest        Boolean @default(true)
+  notifyOnNewMessage          Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -85,6 +86,7 @@ model User {
   feedbackGiven Feedback[]     @relation("MentorFeedback")
   refreshTokens RefreshToken[]
   admin         Admin?
+  sentMessages  Message[]      @relation("SentMessages")
 
   @@index([email])
   @@index([role])
@@ -143,6 +145,7 @@ model Application {
   student  User      @relation("StudentApplications", fields: [studentId], references: [id], onDelete: Cascade)
   reviewer User?     @relation("ReviewedApplications", fields: [reviewerId], references: [id], onDelete: SetNull)
   feedback Feedback?
+  messages Message[]
 
   @@unique([projectId, studentId])
   @@index([projectId])
@@ -170,6 +173,31 @@ model Feedback {
   @@index([mentorId])
   @@index([applicationId])
   @@map("feedback")
+}
+
+model Message {
+  id            String    @id @default(uuid())
+  applicationId String
+  senderId      String
+  content       String    @db.Text
+  isRead        Boolean   @default(false)
+  readAt        DateTime?
+  isEdited      Boolean   @default(false)
+  editedAt      DateTime?
+  isDeleted     Boolean   @default(false)
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sender      User        @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([senderId])
+  @@index([applicationId, createdAt])
+  @@index([isDeleted, createdAt])
+  @@map("messages")
 }
 
 model RefreshToken {

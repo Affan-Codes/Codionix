@@ -9,6 +9,7 @@ import {
   createPasswordResetTemplate,
   createDeadlineReminderEmail,
   createWeeklyDigestEmail,
+  createNewMessageEmail,
 } from './emailTemplates.service.js';
 import { enqueueEmail } from './emailQueue.service.js';
 import { subDays } from 'date-fns';
@@ -316,6 +317,79 @@ export const sendApplicationStatusNotification = async (
       status: newStatus,
       error: error instanceof Error ? error.message : 'Unknown error',
       operation: 'notifications.applicationStatus',
+    });
+  }
+};
+
+/**
+ * Send new message notification email
+ * Called when recipient is offline and has notification preference enabled
+ */
+export const sendNewMessageNotification = async (
+  recipientId: string,
+  senderName: string,
+  projectTitle: string,
+  messagePreview: string,
+  applicationId: string
+): Promise<void> => {
+  try {
+    const recipient = await prisma.user.findUnique({
+      where: { id: recipientId },
+      select: {
+        email: true,
+        fullName: true,
+        notifyOnNewMessage: true,
+      },
+    });
+
+    if (!recipient) {
+      logger.warn('Message notification for non-existent user', {
+        recipientId,
+        operation: 'notifications.newMessage',
+      });
+      return;
+    }
+
+    // Check notification preference
+    if (!recipient.notifyOnNewMessage) {
+      logger.info('Message notification skipped - user preference disabled', {
+        recipientId,
+        operation: 'notifications.newMessage',
+      });
+      return;
+    }
+
+    const html = createNewMessageEmail(
+      recipient.fullName,
+      senderName,
+      projectTitle,
+      messagePreview,
+      applicationId
+    );
+
+    enqueueEmail({
+      recipientEmail: recipient.email,
+      recipientName: recipient.fullName,
+      subject: `New message from ${senderName}`,
+      html,
+      metadata: {
+        type: 'new_message',
+        applicationId,
+        recipientId,
+      },
+    });
+
+    logger.info('Message notification email queued', {
+      recipientId,
+      recipientEmail: recipient.email,
+      senderName,
+      operation: 'notifications.newMessage',
+    });
+  } catch (error) {
+    logger.error('Failed to queue message notification', {
+      recipientId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      operation: 'notifications.newMessage',
     });
   }
 };

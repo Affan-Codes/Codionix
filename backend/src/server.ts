@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createServer } from 'http';
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import app from './app.js';
@@ -10,6 +11,10 @@ import {
 } from './services/emailQueue.service.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.service.js';
 import { initializeCloudinary } from './config/upload.js';
+import {
+  initializeSocketServer,
+  shutdownSocketServer,
+} from './config/socket.js';
 
 const PORT = env.PORT;
 
@@ -84,12 +89,18 @@ const startServer = async () => {
     // Start cron job scheduler
     startScheduler();
 
-    // Start Express server
-    const server = app.listen(PORT, () => {
+    // Create HTTP server (required for Socket.io)
+    const httpServer = createServer(app);
+
+    // Initialize Socket.io
+    initializeSocketServer(httpServer);
+
+    // Start HTTP server
+    const server = httpServer.listen(PORT, () => {
       logger.info(`✅ Server running on http://localhost:${PORT}`);
       logger.info(`✅ Environment: ${env.NODE_ENV}`);
       logger.info(`✅ Health check: http://localhost:${PORT}/health`);
-      logger.info(`✅ DB test: http://localhost:${PORT}/db-test`);
+      logger.info(`✅ Socket.io: ws://localhost:${PORT}`);
     });
 
     // ===================================
@@ -125,13 +136,19 @@ const startServer = async () => {
           await requestTracker.waitForDrain(30000);
         }
 
-        // Stop cron jobs
-        stopScheduler();
+        // Shutdown Socket.io
+        await shutdownSocketServer();
 
+        // Stop cron jobs
+        await stopScheduler();
+
+        // Stop email queue
         await stopEmailQueue();
 
+        // Stop pool monitoring
         stopPoolMonitoring();
 
+        // Disconnect database
         await db.disconnect();
 
         const shutdownDuration = Date.now() - shutdownStartTime;
@@ -152,10 +169,13 @@ const startServer = async () => {
         });
 
         // Force stop scheduler
-        stopScheduler();
+        await stopScheduler();
 
         // Force stop email queue
         await stopEmailQueue();
+
+        // Force stop Socket.io
+        await shutdownSocketServer();
 
         // Force cleanup
         stopPoolMonitoring();

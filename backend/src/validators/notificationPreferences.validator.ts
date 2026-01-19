@@ -8,6 +8,7 @@ export const updateNotificationPreferencesSchema = z.object({
   notifyOnApplicationStatus: z.boolean().optional(),
   notifyOnDeadlineReminder: z.boolean().optional(),
   notifyOnWeeklyDigest: z.boolean().optional(),
+  notifyOnNewMessage: z.boolean().optional(),
 });
 
 // Export type

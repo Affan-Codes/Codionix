@@ -9,6 +9,7 @@ export const EMAIL_CONFIG = {
     WELCOME: 'welcome',
     APPLICATION_RECEIVED: 'application_received',
     APPLICATION_STATUS: 'application_status',
+    NEW_MESSAGE: 'new_message',
     DEADLINE_REMINDER: 'deadline_reminder',
     WEEKLY_DIGEST: 'weekly_digest',
   },
@@ -20,6 +21,9 @@ export const EMAIL_CONFIG = {
 
     // Send application alert within 2 minutes
     APPLICATION_ALERT_DELAY: 2 * 60 * 1000,
+
+    // Send message notification immediately
+    MESSAGE_ALERT_DELAY: 0,
 
     // Send deadline reminders
     DEADLINE_REMINDERS: [
@@ -50,6 +54,7 @@ export const EMAIL_CONFIG = {
     WELCOME_EMAIL: true,
     APPLICATION_ALERTS: true,
     STATUS_UPDATES: true,
+    MESSAGE_ALERTS: true,
     DEADLINE_REMINDERS: true,
     WEEKLY_DIGEST: true,
   },

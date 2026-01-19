@@ -33,7 +33,9 @@ const uploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Key by user ID for authenticated routes
-  keyGenerator: (req) => req.user?.userId || req.ip || 'anonymous',
+  keyGenerator: (req) => req.user?.userId || 'anonymous',
+  skipFailedRequests: false,
+  skip: (req) => !req.user,
 });
 
 // ===================================

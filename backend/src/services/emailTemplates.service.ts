@@ -562,3 +562,48 @@ ${createButton('View All Projects', `${env.FRONTEND_URL}/projects`)}
 
   return createEmailLayout(content);
 };
+
+// Template: NEW MESSAGE NOTIFICATION
+export const createNewMessageEmail = (
+  recipientName: string,
+  senderName: string,
+  projectTitle: string,
+  applicationId: string,
+  messagePreview: string
+): string => {
+  const content = `
+<h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: ${COLORS.primaryText};">New Message Received</h2>
+
+<p style="margin: 0 0 24px 0; font-size: 15px; line-height: 24px; color: ${COLORS.primaryText};">
+  Hi ${recipientName},
+</p>
+
+<p style="margin: 0 0 24px 0; font-size: 15px; line-height: 24px; color: ${COLORS.primaryText};">
+  <strong>${senderName}</strong> sent you a message about <strong>"${projectTitle}"</strong>.
+</p>
+
+${createInfoBox('Message Details', [
+  { label: 'From', value: senderName },
+  { label: 'Project', value: projectTitle },
+])}
+
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 24px 0; padding: 16px; background-color: ${COLORS.background}; border-left: 3px solid ${COLORS.button}; border-radius: 4px;">
+  <tr>
+    <td>
+      <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; color: ${COLORS.secondaryText};">MESSAGE PREVIEW</p>
+      <p style="margin: 0; font-size: 14px; line-height: 22px; color: ${COLORS.primaryText}; font-style: italic;">
+        "${messagePreview.substring(0, 150)}${messagePreview.length > 150 ? '...' : ''}"
+      </p>
+    </td>
+  </tr>
+</table>
+
+${createButton('View & Reply', `${env.FRONTEND_URL}/applications/${applicationId}/messages`)}
+
+<p style="margin: 32px 0 0 0; font-size: 14px; line-height: 22px; color: ${COLORS.secondaryText};">
+  Reply quickly to keep the conversation going and make a great impression.
+</p>
+  `;
+
+  return createEmailLayout(content);
+};
