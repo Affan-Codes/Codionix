@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/hooks/queries/useQueries";
 import { ArrowLeft, Loader2, Edit, Users, X } from "lucide-react";
-import { toast } from "sonner";
 import { ROUTES } from "@/constants";
 import { ApplicationForm } from "@/components/application/ApplicationForm";
 import { useProjectAnalysis } from "@/hooks/useProjectAnalysis";
@@ -36,7 +35,6 @@ export default function ProjectDetailPage() {
 
   const handleApplicationSuccess = () => {
     setShowApplication(false);
-    toast.success("Application submitted");
     navigate(ROUTES.APPLICATIONS);
   };
 

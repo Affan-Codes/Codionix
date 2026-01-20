@@ -182,6 +182,18 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: ROUTES.PROJECT_APPLICANT,
+    element: (
+      <ProtectedRoute>
+        <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
+          <LazyRoute>
+            <ProjectApplicantsPage />
+          </LazyRoute>
+        </RoleGuard>
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: ROUTES.PROJECT_DETAIL,
     element: (
       <LazyRoute>
@@ -224,18 +236,6 @@ export const router = createBrowserRouter([
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
           <LazyRoute>
             <EditProjectPage />
-          </LazyRoute>
-        </RoleGuard>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: ROUTES.PROJECT_APPLICANT,
-    element: (
-      <ProtectedRoute>
-        <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
-          <LazyRoute>
-            <ProjectApplicantsPage />
           </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>

@@ -24,6 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   const queryClient = useQueryClient();
 
   // Check if token exists to determine if we should fetch user
@@ -34,6 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isLoading: isQueryLoading,
     isError,
     error,
+    isFetching,
   } = useCurrentUser({
     enabled: hasToken, // Only fetch if token exists
     retry: false, // Don't retry on auth errors
@@ -42,6 +44,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loginMutation = useLogin();
   const registerMutation = useRegister();
   const logoutMutation = useLogoutMutation();
+
+
+  // This prevents premature redirects during deep navigation
+  useEffect(() => {
+    // Don't mark as initialized until we've attempted to load the user
+    if (!hasToken) {
+      // No token = definitely not authenticated
+      setIsInitialized(true);
+      return;
+    }
+
+    if (!isQueryLoading && !isFetching) {
+      // User fetch completed (either got user or got error)
+      setIsInitialized(true);
+    }
+  }, [hasToken, isQueryLoading, isFetching]);
 
   useEffect(() => {
     if (currentUser) {
@@ -110,7 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user,
     isAuthenticated: !!user,
     isLoading:
-      isQueryLoading || loginMutation.isPending || registerMutation.isPending,
+      !isInitialized || loginMutation.isPending || registerMutation.isPending,
     login,
     register,
     logout,
