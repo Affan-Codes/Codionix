@@ -25,6 +25,11 @@ import {
   cleanupExpiredPasswordResetTokens,
 } from './auth.jobs.js';
 import { runDeadlineReminders, runWeeklyDigests } from './notification.jobs.js';
+import {
+  jobDuration,
+  jobExecutionsTotal,
+  recordJobExecutionTime,
+} from '../services/metrics.service.js';
 
 // ===================================
 // TYPES
@@ -171,10 +176,10 @@ function updateMetrics(
 /**
  * Wrap job execution with monitoring, retries, and error handling
  */
+
 async function executeJobWithMonitoring(config: JobConfig): Promise<void> {
   const { name, onTick, maxRetries = 3 } = config;
 
-  // Prevent duplicate execution (idempotency guard)
   if (runningJobs.has(name)) {
     logger.warn(`Job already running, skipping: ${name}`, {
       category: 'scheduler',
@@ -183,7 +188,6 @@ async function executeJobWithMonitoring(config: JobConfig): Promise<void> {
     return;
   }
 
-  // Don't start new jobs during shutdown
   if (isShuttingDown) {
     logger.info(`Shutdown in progress, skipping job: ${name}`, {
       category: 'scheduler',
@@ -208,7 +212,6 @@ async function executeJobWithMonitoring(config: JobConfig): Promise<void> {
     maxRetries,
   });
 
-  // Retry loop
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await onTick();
@@ -221,6 +224,11 @@ async function executeJobWithMonitoring(config: JobConfig): Promise<void> {
         duration: `${duration}ms`,
         attempt,
       });
+
+      // Record metrics
+      jobExecutionsTotal.inc({ job: name, status: 'success' });
+      jobDuration.observe({ job: name }, duration);
+      recordJobExecutionTime(name, duration);
 
       updateMetrics(name, true, duration);
       runningJobs.delete(name);
@@ -253,6 +261,11 @@ async function executeJobWithMonitoring(config: JobConfig): Promise<void> {
           duration: `${duration}ms`,
           severity: 'high',
         });
+
+        // Record failure metrics
+        jobExecutionsTotal.inc({ job: name, status: 'failed' });
+        jobDuration.observe({ job: name }, duration);
+        recordJobExecutionTime(name, duration);
 
         updateMetrics(name, false, duration);
       }

@@ -8,6 +8,7 @@ import healthRoutes from './health.routes.js';
 import analyticsRoutes from './analytics.routes.js';
 import uploadRoutes from './upload.routes.js';
 import messageRoutes from './message.routes.js';
+import metricsRoutes from './metrics.routes.js';
 
 const router = Router();
 
@@ -23,5 +24,6 @@ router.use('/health', healthRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/messages', messageRoutes);
+router.use('/metrics', metricsRoutes);
 
 export default router;

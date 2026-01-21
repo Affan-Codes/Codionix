@@ -16,6 +16,7 @@ import * as messagingService from './messaging.service.js';
 import { prisma } from '../config/database.js';
 import { enqueueEmail } from './emailQueue.service.js';
 import { createNewMessageEmail } from './emailTemplates.service.js';
+import { recordSocketMessageLatency, socketMessagesTotal } from './metrics.service.js';
 
 // ===================================
 // RATE LIMITING STATE
@@ -232,6 +233,10 @@ export function handleSocketConnection(socket: TypedSocket): void {
       }
 
       const duration = Date.now() - startTime;
+
+      // Record metrics
+      socketMessagesTotal.inc({ direction: 'sent' });
+      recordSocketMessageLatency(duration);
 
       logger.info('Message sent via socket', {
         socketId: socket.id,
@@ -534,3 +539,5 @@ export function handleSocketConnection(socket: TypedSocket): void {
     });
   });
 }
+
+

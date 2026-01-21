@@ -10,6 +10,7 @@ import routes from './routes/index.routes.js';
 import { requestCorrelation } from './middleware/requestLogger.js';
 import { responseLogger } from './middleware/responseLogger.js';
 import { requestTrackerMiddleware } from './middleware/requestTracker.js';
+import { metricsCollector } from './middleware/metricsCollector.middleware.js';
 
 const app = express();
 
@@ -18,6 +19,9 @@ app.use(requestCorrelation);
 
 // Track active requests for graceful shutdown
 app.use(requestTrackerMiddleware);
+
+// Tracks metrics for each request
+app.use(metricsCollector);
 
 // Intercepts response to log outgoing data
 app.use(responseLogger);

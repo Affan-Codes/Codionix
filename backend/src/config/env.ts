@@ -106,6 +106,15 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+
+  // Metrics Configuration
+  METRICS_ENABLED: z.string().default('true').transform(Boolean),
+  METRICS_COLLECT_INTERVAL_MS: z.string().default('30000').transform(Number),
+
+  // Grafana Cloud (optional)
+  GRAFANA_CLOUD_URL: z.string().optional(),
+  GRAFANA_CLOUD_USERNAME: z.string().optional(),
+  GRAFANA_CLOUD_PASSWORD: z.string().optional(),
 });
 
 // Validate and export

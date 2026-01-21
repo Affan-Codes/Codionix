@@ -16,6 +16,10 @@
 
 import { logger } from '../utils/logger.js';
 import { sendEmailSync } from './email.service.js';
+import {
+  emailsSentTotal,
+  recordEmailProcessingTime,
+} from './metrics.service.js';
 
 // ===================================
 // TYPES
@@ -193,6 +197,10 @@ async function processJob(job: EmailJob): Promise<void> {
 
     const duration = Date.now() - startTime;
 
+    // Record metrics
+    emailsSentTotal.inc({ status: 'success' });
+    recordEmailProcessingTime(duration);
+
     logger.info('Email job completed', {
       jobId: job.id,
       recipientEmail: job.data.recipientEmail,
@@ -204,6 +212,10 @@ async function processJob(job: EmailJob): Promise<void> {
     });
   } catch (error) {
     const duration = Date.now() - startTime;
+
+    // Record failure metrics
+    emailsSentTotal.inc({ status: 'failed' });
+    recordEmailProcessingTime(duration);
 
     logger.error('Email job failed', {
       jobId: job.id,
@@ -217,7 +229,6 @@ async function processJob(job: EmailJob): Promise<void> {
       category: 'email_queue',
     });
 
-    // Retry if attempts remaining
     if (job.attempts < job.maxAttempts) {
       const retryDelay = RETRY_DELAYS[job.attempts - 1] || 15000;
       job.nextRetryAt = new Date(Date.now() + retryDelay);
@@ -229,7 +240,6 @@ async function processJob(job: EmailJob): Promise<void> {
         category: 'email_queue',
       });
 
-      // Put job back in queue for retry
       queue.push(job);
     } else {
       logger.error('Email job permanently failed', {

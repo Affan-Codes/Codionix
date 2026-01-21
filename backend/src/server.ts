@@ -15,6 +15,11 @@ import {
   initializeSocketServer,
   shutdownSocketServer,
 } from './config/socket.js';
+import {
+  initializeMetrics,
+  startMetricsCollection,
+  stopMetricsCollection,
+} from './services/metrics.service.js';
 
 const PORT = env.PORT;
 
@@ -23,6 +28,7 @@ const PORT = env.PORT;
 // ===================================
 
 let poolMonitoringInterval: NodeJS.Timeout | null = null;
+let metricsInterval: NodeJS.Timeout | null = null;
 
 /**
  * Monitor connection pool health
@@ -83,6 +89,12 @@ const startServer = async () => {
     // Initialize Cloudinary
     initializeCloudinary();
 
+    // Initialize metrics collection
+    initializeMetrics();
+
+    // Start periodic metrics updates (every 15 seconds)
+    metricsInterval = startMetricsCollection(env.METRICS_COLLECT_INTERVAL_MS);
+
     // Start email queue
     startEmailQueue();
 
@@ -100,6 +112,10 @@ const startServer = async () => {
       logger.info(`✅ Server running on http://localhost:${PORT}`);
       logger.info(`✅ Environment: ${env.NODE_ENV}`);
       logger.info(`✅ Health check: http://localhost:${PORT}/health`);
+      logger.info(`✅ Metrics (JSON): http://localhost:${PORT}/api/v1/metrics`);
+      logger.info(
+        `✅ Metrics (Prometheus): http://localhost:${PORT}/api/v1/metrics/prometheus`
+      );
       logger.info(`✅ Socket.io: ws://localhost:${PORT}`);
     });
 
@@ -134,6 +150,12 @@ const startServer = async () => {
 
           // Wait up to 30 seconds for requests to finish
           await requestTracker.waitForDrain(30000);
+        }
+
+        // Stop metrics collection
+        if (metricsInterval) {
+          stopMetricsCollection(metricsInterval);
+          metricsInterval = null;
         }
 
         // Shutdown Socket.io
@@ -179,6 +201,10 @@ const startServer = async () => {
 
         // Force cleanup
         stopPoolMonitoring();
+
+        if (metricsInterval) {
+          stopMetricsCollection(metricsInterval);
+        }
 
         try {
           await db.disconnect();
