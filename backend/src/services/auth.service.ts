@@ -190,6 +190,8 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
         isEmailVerified: true,
         profilePictureUrl: true,
         createdAt: true,
+        googleId: true,
+        githubId: true,
       },
     });
 
@@ -200,6 +202,25 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
         outcome: 'unauthorized',
       });
       throw new UnauthorizedError('Invalid email or password');
+    }
+
+    // Check if this is an OAuth-only account
+    if (!user.passwordHash) {
+      const oauthProviders = [];
+      if (user.googleId) oauthProviders.push('Google');
+      if (user.githubId) oauthProviders.push('GitHub');
+
+      logger.warn('Login attempted on OAuth-only account', {
+        operation: 'auth.login',
+        userId: user.id,
+        email,
+        providers: oauthProviders,
+        outcome: 'unauthorized',
+      });
+
+      throw new UnauthorizedError(
+        `This account uses ${oauthProviders.join(' or ')} login. Please sign in with ${oauthProviders[0]}.`
+      );
     }
 
     // Verify password

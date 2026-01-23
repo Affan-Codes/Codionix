@@ -32,12 +32,50 @@ import type {
   OAuthProvider,
   OAuthInitRequest,
   OAuthInitResponse,
-  GoogleProfile,
-  GitHubProfile,
-  GitHubEmail,
   OAuthUserData,
-  OAuthTokenResponse,
 } from '../types/oauth.types.js';
+import { z } from 'zod';
+
+// ===================================
+// RUNTIME VALIDATION SCHEMAS
+// ===================================
+
+const OAuthTokenResponseSchema = z.object({
+  access_token: z.string(),
+  token_type: z.string(),
+  scope: z.string(),
+  expires_in: z.number().optional(),
+  refresh_token: z.string().optional(),
+});
+
+const GoogleProfileSchema = z.object({
+  sub: z.string(),
+  email: z.email(),
+  email_verified: z.boolean(),
+  name: z.string(),
+  picture: z.string().optional(),
+  given_name: z.string().optional(),
+  family_name: z.string().optional(),
+});
+
+const GitHubProfileSchema = z.object({
+  id: z.number(),
+  login: z.string(),
+  email: z.email().nullable(),
+  name: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  bio: z.string().nullable(),
+  html_url: z.string(),
+  company: z.string().nullable(),
+  location: z.string().nullable(),
+});
+
+const GitHubEmailSchema = z.object({
+  email: z.email(),
+  primary: z.boolean(),
+  verified: z.boolean(),
+  visibility: z.string().nullable(),
+});
 
 // ===================================
 // OAUTH URLS
@@ -283,7 +321,9 @@ async function exchangeCodeForToken(
         throw new Error(`Google token exchange failed: ${error}`);
       }
 
-      const data: OAuthTokenResponse = await response.json();
+      const rawData: unknown = await response.json();
+      const data = OAuthTokenResponseSchema.parse(rawData);
+
       tracker.success({ provider });
       return data.access_token;
     }
@@ -308,13 +348,24 @@ async function exchangeCodeForToken(
         throw new Error(`GitHub token exchange failed: ${error}`);
       }
 
-      const data: OAuthTokenResponse = await response.json();
+      const rawData: unknown = await response.json();
+      const data = OAuthTokenResponseSchema.parse(rawData);
+
       tracker.success({ provider });
       return data.access_token;
     }
 
     throw new Error(`Unsupported provider: ${provider}`);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('Invalid OAuth token response format', {
+        provider,
+        errors: error.issues,
+        operation: 'oauth.exchangeToken',
+      });
+      throw new Error(`Invalid response from ${provider} token endpoint`);
+    }
+
     tracker.failure(error, { provider });
     throw error;
   }
@@ -345,19 +396,20 @@ async function fetchUserProfile(
         throw new Error('Failed to fetch Google profile');
       }
 
-      const profile: GoogleProfile = await response.json();
+      const rawProfile: unknown = await response.json();
+      const profile = GoogleProfileSchema.parse(rawProfile);
 
       // Validate email is verified
       if (!profile.email_verified) {
         throw new UnauthorizedError('Google email not verified');
       }
 
-      const userData = {
-        provider: 'google' as const,
+      const userData: Omit<OAuthUserData, 'role'> = {
+        provider: 'google',
         providerId: profile.sub,
         email: profile.email,
         fullName: profile.name,
-        avatarUrl: profile.picture,
+        ...(profile.picture && { avatarUrl: profile.picture }),
       };
 
       tracker.success({ provider, email: profile.email });
@@ -377,7 +429,8 @@ async function fetchUserProfile(
         throw new Error('Failed to fetch GitHub profile');
       }
 
-      const profile: GitHubProfile = await profileResponse.json();
+      const rawProfile: unknown = await profileResponse.json();
+      const profile = GitHubProfileSchema.parse(rawProfile);
 
       // Fetch emails (GitHub doesn't always include email in profile)
       const emailResponse = await fetch(GITHUB_EMAIL_URL, {
@@ -391,7 +444,8 @@ async function fetchUserProfile(
         throw new Error('Failed to fetch GitHub emails');
       }
 
-      const emails: GitHubEmail[] = await emailResponse.json();
+      const rawEmails: unknown = await emailResponse.json();
+      const emails = z.array(GitHubEmailSchema).parse(rawEmails);
 
       // Get primary verified email
       const primaryEmail = emails.find((e) => e.primary && e.verified);
@@ -402,13 +456,13 @@ async function fetchUserProfile(
         );
       }
 
-      const userData = {
+      const userData: Omit<OAuthUserData, 'role'> = {
         provider: 'github' as const,
         providerId: profile.id.toString(),
         email: primaryEmail.email,
         fullName: profile.name || profile.login,
-        avatarUrl: profile.avatar_url || undefined,
-        bio: profile.bio || undefined,
+        ...(profile.avatar_url && { avatarUrl: profile.avatar_url }),
+        ...(profile.bio && { bio: profile.bio }),
       };
 
       tracker.success({ provider, email: primaryEmail.email });
@@ -417,6 +471,15 @@ async function fetchUserProfile(
 
     throw new Error(`Unsupported provider: ${provider}`);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      logger.error('Invalid OAuth profile response format', {
+        provider,
+        errors: error.issues,
+        operation: 'oauth.fetchProfile',
+      });
+      throw new Error(`Invalid response from ${provider} profile endpoint`);
+    }
+
     tracker.failure(error, { provider });
     throw error;
   }
@@ -535,8 +598,8 @@ async function upsertOAuthUser(
         role,
         isEmailVerified: true, // OAuth providers verify email
         emailVerifiedAt: new Date(),
-        profilePictureUrl: avatarUrl,
-        bio,
+        profilePictureUrl: avatarUrl ?? null,
+        bio: bio ?? null,
         skills: [],
         ...(provider === 'google' && { googleId: providerId }),
         ...(provider === 'github' && { githubId: providerId }),
