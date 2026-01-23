@@ -13,6 +13,7 @@ import {
 import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import rateLimit from 'express-rate-limit';
+import oauthRoutes from './oauth.routes.js';
 
 const router = Router();
 
@@ -59,6 +60,16 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// ===================================
+// OAUTH ROUTES (MOUNTED FIRST)
+// ===================================
+
+/**
+ * Mount OAuth routes
+ * Includes: /oauth/init, /google/callback, /github/callback
+ */
+router.use('/oauth', oauthRoutes);
 
 // ===================================
 // PUBLIC ROUTES

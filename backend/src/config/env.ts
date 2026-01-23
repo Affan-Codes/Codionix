@@ -115,6 +115,16 @@ const envSchema = z.object({
   GRAFANA_CLOUD_URL: z.string().optional(),
   GRAFANA_CLOUD_USERNAME: z.string().optional(),
   GRAFANA_CLOUD_PASSWORD: z.string().optional(),
+
+  // OAuth - Google
+  GOOGLE_CLIENT_ID: z.string().min(1, 'Google Client ID is required'),
+  GOOGLE_CLIENT_SECRET: z.string().min(1, 'Google Client Secret is required'),
+  GOOGLE_CALLBACK_URL: z.url('Google Callback URL must be a valid URL'),
+
+  // OAuth - GitHub
+  GITHUB_CLIENT_ID: z.string().min(1, 'GitHub Client ID is required'),
+  GITHUB_CLIENT_SECRET: z.string().min(1, 'GitHub Client Secret is required'),
+  GITHUB_CALLBACK_URL: z.url('GitHub Callback URL must be a valid URL'),
 });
 
 // Validate and export

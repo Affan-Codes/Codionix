@@ -49,7 +49,7 @@ enum ApplicationStatus {
 model User {
   id                String    @id @default(uuid())
   email             String    @unique
-  passwordHash      String
+  passwordHash      String?
   fullName          String
   role              UserRole  @default(STUDENT)
   phone             String?
@@ -60,6 +60,10 @@ model User {
   skills            String[]
   isEmailVerified   Boolean   @default(false)
   emailVerifiedAt   DateTime?
+
+  // OAuth provider IDs
+  googleId String? @unique
+  githubId String? @unique
 
   // Email verification fields
   emailVerificationToken  String?   @unique
@@ -92,6 +96,8 @@ model User {
   @@index([role])
   @@index([passwordResetToken])
   @@index([emailVerificationToken])
+  @@index([googleId])
+  @@index([githubId])
   @@map("users")
 }
 
