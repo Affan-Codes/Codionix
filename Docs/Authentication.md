@@ -2,35 +2,169 @@
 
 Base URL: `https://api.codionix.com/api/v1/auth`
 
-All authentication endpoints are **public** unless specified. Rate limiting applies to prevent abuse.
+All endpoints are **public** unless marked otherwise.
 
 ---
 
-## Overview
+## Token Architecture
 
-Codionix uses **JWT-based authentication** with access/refresh token pairs:
+**Access Tokens:**
 
-- **Access tokens**: Short-lived (15 minutes), included in `Authorization: Bearer <token>` header
-- **Refresh tokens**: Long-lived (7 days), used to obtain new access tokens
-- **Email verification**: Required before full platform access
+- Lifespan: 15 minutes
+- Usage: Include in `Authorization: Bearer {token}` header
+- Payload: `{ userId, email, role, iat, exp }`
 
-**Authentication flow:**
+**Refresh Tokens:**
 
-1. Register → Receive verification email
-2. Verify email → Account activated
-3. Login → Receive access + refresh tokens
-4. Use access token for API requests
-5. Refresh access token when expired
+- Lifespan: 7 days
+- Usage: Exchange for new access token via `/refresh`
+- Storage: Database (revocable)
+
+**Token Delivery:**
+
+- Returned in JSON response body (NOT httpOnly cookies)
+- Frontend responsible for storage strategy
+- **Recommendation:** Memory/sessionStorage (avoid localStorage due to XSS risk)
 
 ---
 
-## Rate Limits
+## OAuth Configuration
 
-| Endpoint                                                     | Limit                     |
-| ------------------------------------------------------------ | ------------------------- |
-| `/register`, `/login`, `/forgot-password`, `/reset-password` | 10 requests / 15 minutes  |
-| `/verify-email`, `/resend-verification`                      | 3 requests / 15 minutes   |
-| All other endpoints                                          | 200 requests / 15 minutes |
+### Provider Setup
+
+**Google OAuth:**
+
+- Callback URL: `{BACKEND_URL}/api/v1/auth/google/callback`
+- Required scopes: `userinfo.email`, `userinfo.profile`
+- Email must be verified at Google
+
+**GitHub OAuth:**
+
+- Callback URL: `{BACKEND_URL}/api/v1/auth/github/callback`
+- Required scopes: `user:email`, `read:user`
+- Primary email must be verified at GitHub
+
+### OAuth Flow
+
+1. **Frontend:** POST `/oauth/init` with `{ provider, role }`
+2. **Backend:** Returns authorization URL with server-side state token
+3. **Frontend:** Redirect user to authorization URL
+4. **User:** Authorizes on provider's site
+5. **Provider:** Redirects to backend callback URL
+6. **Backend:** Validates state, exchanges code for tokens, creates/links user
+7. **Backend:** Redirects to frontend with tokens in URL fragment
+
+**Frontend Success Redirect:**
+
+```
+{FRONTEND_URL}/auth/oauth/success#access_token={token}&refresh_token={token}
+```
+
+**Frontend Error Redirect:**
+
+```
+{FRONTEND_URL}/auth/oauth/error?provider={google|github}&error={code}
+```
+
+**Token Extraction (Frontend):**
+
+```javascript
+const hash = window.location.hash.substring(1);
+const params = new URLSearchParams(hash);
+const accessToken = params.get("access_token");
+const refreshToken = params.get("refresh_token");
+```
+
+### Email Verification for OAuth
+
+**Email/Password Users:** Must verify email via `/verify-email` endpoint.
+
+**OAuth Users (Google/GitHub):** Email verification **skipped entirely** because:
+
+- Provider guarantees email is verified
+- User created with `isEmailVerified: true`
+- No verification email sent
+- Welcome email sent immediately
+
+---
+
+## Rate Limiting
+
+### Limits by Endpoint
+
+| Endpoint                                                     | Limit                 | Window |
+| ------------------------------------------------------------ | --------------------- | ------ |
+| `/register`, `/login`, `/forgot-password`, `/reset-password` | 10 requests           | 15 min |
+| `/verify-email`, `/resend-verification`                      | 3 requests            | 15 min |
+| OAuth endpoints (`/oauth/init`, callbacks)                   | 10 init, 20 callbacks | 15 min |
+| All other endpoints                                          | 200 requests          | 15 min |
+
+### Behavior
+
+**Window Type:** Sliding window (NOT fixed intervals)
+
+**Example:**
+
+- Request #1 at 00:00 → counter = 1
+- Request #10 at 00:05 → limit reached
+- At 00:15:01 → request #1 expires, counter = 9, new request allowed
+
+**Tracking:** Per IP address (not per user)
+
+**Response Headers:**
+
+```
+RateLimit-Limit: 10
+RateLimit-Remaining: 7
+RateLimit-Reset: 1706094900
+```
+
+**Rate Limit Exceeded Response (429):**
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many authentication attempts. Please try again in 15 minutes."
+  }
+}
+```
+
+---
+
+## Session Management
+
+### Password Reset Behavior
+
+**What happens on password reset:**
+
+- ✅ Password hash updated
+- ✅ Reset token cleared
+- ❌ Existing refresh tokens **NOT revoked**
+
+**Security Implication:**
+
+- If attacker has active refresh token, password reset doesn't invalidate it
+- User must manually logout all sessions via `/logout` if compromised
+
+**To force re-login everywhere:**
+
+1. Change password via `/reset-password`
+2. Call `/logout` for each active session (requires refresh token)
+
+### Logout Behavior
+
+**What `/logout` does:**
+
+- Marks refresh token as `isRevoked: true` in database
+- Access token remains valid until expiry (max 15 minutes)
+
+**Frontend must:**
+
+- Discard both access and refresh tokens immediately
+- Redirect to login page
+- Clear any user state
 
 ---
 
@@ -38,9 +172,9 @@ Codionix uses **JWT-based authentication** with access/refresh token pairs:
 
 **`POST /register`**
 
-Create a new user account. Sends verification email automatically.
+Create new user account. Sends email verification.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -51,14 +185,14 @@ Create a new user account. Sends verification email automatically.
 }
 ```
 
-| Field      | Type   | Required | Constraints                                                     |
-| ---------- | ------ | -------- | --------------------------------------------------------------- |
-| `email`    | string | Yes      | Valid email format                                              |
-| `password` | string | Yes      | Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char |
-| `fullName` | string | Yes      | 2-100 characters                                                |
-| `role`     | enum   | Yes      | `STUDENT`, `MENTOR`, or `EMPLOYER`                              |
+**Validation:**
 
-### Success Response (201 Created)
+- `email`: Valid format
+- `password`: Min 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
+- `fullName`: 2-100 characters
+- `role`: `STUDENT`, `MENTOR`, or `EMPLOYER`
+
+### Success Response (201)
 
 ```json
 {
@@ -81,16 +215,15 @@ Create a new user account. Sends verification email automatically.
 }
 ```
 
-**Side effects:**
+**Side Effects:**
 
-- User created in database with `isEmailVerified: false`
 - Email verification token generated (24-hour expiry)
-- Verification email queued for delivery
+- Verification email queued
 - Refresh token stored in database
 
-### Error Responses
+### Errors
 
-**409 Conflict** - Email already exists
+**409 - Email exists:**
 
 ```json
 {
@@ -102,7 +235,7 @@ Create a new user account. Sends verification email automatically.
 }
 ```
 
-**400 Validation Error** - Invalid input
+**400 - Validation failed:**
 
 ```json
 {
@@ -128,7 +261,7 @@ Create a new user account. Sends verification email automatically.
 
 Authenticate with email and password.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -137,7 +270,7 @@ Authenticate with email and password.
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -160,14 +293,9 @@ Authenticate with email and password.
 }
 ```
 
-**Side effects:**
+### Errors
 
-- New refresh token created and stored
-- User's `updatedAt` timestamp updated
-
-### Error Responses
-
-**401 Unauthorized** - Invalid credentials
+**401 - Invalid credentials:**
 
 ```json
 {
@@ -179,7 +307,7 @@ Authenticate with email and password.
 }
 ```
 
-**401 Unauthorized** - OAuth-only account
+**401 - OAuth-only account:**
 
 ```json
 {
@@ -197,9 +325,9 @@ Authenticate with email and password.
 
 **`POST /oauth/init`**
 
-Start OAuth flow (Google or GitHub). Returns authorization URL to redirect user.
+Start OAuth flow. Returns provider authorization URL.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -208,12 +336,12 @@ Start OAuth flow (Google or GitHub). Returns authorization URL to redirect user.
 }
 ```
 
-| Field      | Type | Required | Options                         |
-| ---------- | ---- | -------- | ------------------------------- |
-| `provider` | enum | Yes      | `google`, `github`              |
-| `role`     | enum | Yes      | `STUDENT`, `MENTOR`, `EMPLOYER` |
+**Options:**
 
-### Success Response (200 OK)
+- `provider`: `google` or `github`
+- `role`: `STUDENT`, `MENTOR`, or `EMPLOYER`
+
+### Success Response (200)
 
 ```json
 {
@@ -225,36 +353,74 @@ Start OAuth flow (Google or GitHub). Returns authorization URL to redirect user.
 }
 ```
 
-**Instructions:**
+**State Token:**
+
+- Stored server-side (in-memory for single instance, use Redis for multi-instance)
+- 5-minute expiry
+- Single-use (consumed on callback)
+- Contains provider + role + nonce
+
+**Frontend Action:**
 
 1. Redirect user to `authUrl`
-2. User authorizes on provider's site
-3. Provider redirects back to `/auth/oauth/{provider}/callback`
-4. Backend handles callback and redirects to frontend with tokens in URL fragment
+2. Wait for provider callback redirect
 
-**Frontend callback handling:**
+---
 
-```javascript
-// Provider redirects to: https://yourapp.com/auth/oauth/success#access_token=...&refresh_token=...
-const hash = window.location.hash.substring(1);
-const params = new URLSearchParams(hash);
-const accessToken = params.get("access_token");
-const refreshToken = params.get("refresh_token");
+## OAuth Callbacks
+
+**`GET /auth/google/callback`**  
+**`GET /auth/github/callback`**
+
+**Called by provider, not frontend.**
+
+### Query Parameters
+
+- `code`: Authorization code from provider
+- `state`: State token from init
+- `error`: Optional error code
+- `error_description`: Optional error message
+
+### Success Behavior
+
+Backend redirects to:
+
+```
+{FRONTEND_URL}/auth/oauth/success#access_token={token}&refresh_token={token}
 ```
 
-### Error Response
+### Error Behavior
 
-**400 Validation Error**
+Backend redirects to:
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Provider must be google or github"
-  }
-}
 ```
+{FRONTEND_URL}/auth/oauth/error?provider={google|github}&error={code}
+```
+
+**Error Codes:**
+
+- `missing_parameters`: No code or state
+- `callback_failed`: Backend error during processing
+- Provider-specific errors passed through
+
+### Account Linking
+
+**If email exists with password:**
+
+- OAuth provider ID added to existing account
+- Profile picture updated (if not set)
+- Bio updated (if provided by OAuth)
+- Returns existing user with new tokens
+
+**If email exists with different OAuth:**
+
+- Error (cannot link multiple OAuth providers to same email)
+
+**If new user:**
+
+- Account created with `isEmailVerified: true`
+- No email verification required
+- Welcome email sent immediately
 
 ---
 
@@ -262,9 +428,9 @@ const refreshToken = params.get("refresh_token");
 
 **`POST /verify-email`**
 
-Verify email address with token from verification email.
+Verify email with token from verification email.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -272,7 +438,7 @@ Verify email address with token from verification email.
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -284,16 +450,16 @@ Verify email address with token from verification email.
 }
 ```
 
-**Side effects:**
+**Side Effects:**
 
 - `isEmailVerified` set to `true`
 - `emailVerifiedAt` timestamp recorded
-- Verification token cleared
+- Token cleared
 - Welcome email queued
 
-### Error Responses
+### Errors
 
-**401 Unauthorized** - Invalid/expired token
+**401 - Invalid/expired:**
 
 ```json
 {
@@ -305,7 +471,7 @@ Verify email address with token from verification email.
 }
 ```
 
-**400 Validation Error** - Already verified
+**400 - Already verified:**
 
 ```json
 {
@@ -319,13 +485,13 @@ Verify email address with token from verification email.
 
 ---
 
-## Resend Verification Email
+## Resend Verification
 
 **`POST /resend-verification`**
 
 Request new verification email.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -333,7 +499,7 @@ Request new verification email.
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -344,11 +510,11 @@ Request new verification email.
 }
 ```
 
-**Note:** Response is intentionally vague to prevent email enumeration attacks.
+**Security:** Response does not reveal if email exists.
 
-**Side effects (if email exists and not verified):**
+**Side Effects (if email exists and unverified):**
 
-- New verification token generated
+- New token generated
 - Old token invalidated
 - Verification email queued
 
@@ -358,9 +524,9 @@ Request new verification email.
 
 **`POST /refresh`**
 
-Obtain new access token using refresh token.
+Get new access token using refresh token.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -368,7 +534,7 @@ Obtain new access token using refresh token.
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -380,14 +546,16 @@ Obtain new access token using refresh token.
 }
 ```
 
-**Side effects:**
+**Side Effects:**
 
 - Old refresh token revoked
-- New refresh token created and stored
+- New refresh token created
 
-### Error Responses
+**Note:** Both tokens are returned (access + refresh).
 
-**401 Unauthorized** - Invalid/expired/revoked token
+### Errors
+
+**401 - Invalid token:**
 
 ```json
 {
@@ -405,9 +573,9 @@ Obtain new access token using refresh token.
 
 **`POST /logout`**
 
-Revoke refresh token (invalidates session).
+Revoke refresh token.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -415,7 +583,7 @@ Revoke refresh token (invalidates session).
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -426,11 +594,11 @@ Revoke refresh token (invalidates session).
 }
 ```
 
-**Side effects:**
+**Side Effects:**
 
-- Refresh token marked as revoked in database
+- Refresh token marked as `isRevoked: true`
 
-**Note:** Access tokens remain valid until expiry (15 minutes). Client should discard both tokens immediately.
+**Note:** Access token remains valid until expiry (max 15 min).
 
 ---
 
@@ -440,9 +608,9 @@ Revoke refresh token (invalidates session).
 
 Get authenticated user's basic info.
 
-**Authentication:** Required (access token)
+**Authentication:** Required
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -455,20 +623,6 @@ Get authenticated user's basic info.
 }
 ```
 
-### Error Response
-
-**401 Unauthorized** - Missing/invalid token
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "No token provided"
-  }
-}
-```
-
 ---
 
 ## Forgot Password
@@ -477,7 +631,7 @@ Get authenticated user's basic info.
 
 Request password reset email.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -485,7 +639,7 @@ Request password reset email.
 }
 ```
 
-### Success Response (200 OK)
+### Success Response (200)
 
 ```json
 {
@@ -496,11 +650,11 @@ Request password reset email.
 }
 ```
 
-**Note:** Response is intentionally vague to prevent email enumeration.
+**Security:** Response does not reveal if email exists.
 
-**Side effects (if email exists):**
+**Side Effects (if email exists):**
 
-- Password reset token generated (1-hour expiry)
+- Reset token generated (1-hour expiry)
 - Reset email queued
 
 ---
@@ -509,9 +663,9 @@ Request password reset email.
 
 **`POST /reset-password`**
 
-Reset password using token from reset email.
+Reset password with token from email.
 
-### Request Body
+### Request
 
 ```json
 {
@@ -520,12 +674,11 @@ Reset password using token from reset email.
 }
 ```
 
-| Field      | Type   | Constraints            |
-| ---------- | ------ | ---------------------- |
-| `token`    | string | Reset token from email |
-| `password` | string | Same as registration   |
+**Validation:**
 
-### Success Response (200 OK)
+- `password`: Same rules as registration
+
+### Success Response (200)
 
 ```json
 {
@@ -536,61 +689,28 @@ Reset password using token from reset email.
 }
 ```
 
-**Side effects:**
+**Side Effects:**
 
 - Password hash updated
 - Reset token cleared
-- All existing refresh tokens remain valid
+- **Existing refresh tokens NOT revoked** (sessions remain active)
 
-### Error Response
-
-**401 Unauthorized** - Invalid/expired token
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Invalid or expired reset token"
-  }
-}
-```
+**To force logout all sessions:**
+User must call `/logout` for each active session.
 
 ---
 
-## Authentication Header Format
+## Error Codes
 
-All protected endpoints require:
+| Code                  | HTTP | Description                     |
+| --------------------- | ---- | ------------------------------- |
+| `VALIDATION_ERROR`    | 400  | Invalid request data            |
+| `UNAUTHORIZED`        | 401  | Missing/invalid credentials     |
+| `CONFLICT`            | 409  | Resource already exists         |
+| `RATE_LIMIT_EXCEEDED` | 429  | Too many requests               |
+| `INTERNAL_ERROR`      | 500  | Server error (includes errorId) |
 
-```
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-**Access token payload:**
-
-```json
-{
-  "userId": "550e8400-e29b-41d4-a716-446655440000",
-  "email": "student@example.com",
-  "role": "STUDENT",
-  "iat": 1706094600,
-  "exp": 1706095500
-}
-```
-
----
-
-## Error Codes Reference
-
-| Code                  | HTTP Status | Description                                 |
-| --------------------- | ----------- | ------------------------------------------- |
-| `VALIDATION_ERROR`    | 400         | Request body/params failed validation       |
-| `UNAUTHORIZED`        | 401         | Missing, invalid, or expired credentials    |
-| `CONFLICT`            | 409         | Resource already exists (duplicate email)   |
-| `RATE_LIMIT_EXCEEDED` | 429         | Too many requests                           |
-| `INTERNAL_ERROR`      | 500         | Server error (includes errorId for support) |
-
-All error responses include `correlationId` for debugging:
+All errors include `correlationId` for debugging:
 
 ```json
 {
