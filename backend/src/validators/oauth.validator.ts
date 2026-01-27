@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const googleTokenResponseSchema = z.object({
+export const oauthTokenResponseSchema = z.object({
   access_token: z.string(),
   token_type: z.string(),
   scope: z.string(),
@@ -16,12 +16,6 @@ export const googleProfileSchema = z.object({
   picture: z.string().optional(),
   given_name: z.string().optional(),
   family_name: z.string().optional(),
-});
-
-export const githubTokenResponseSchema = z.object({
-  access_token: z.string(),
-  token_type: z.string(),
-  scope: z.string(),
 });
 
 export const githubProfileSchema = z.object({
@@ -48,7 +42,13 @@ export const githubEmailsSchema = z.array(githubEmailSchema);
 /**
  * OAuth initialization request
  */
-export const oauthInitSchema = z.object({
+export const oauthLoginInitSchema = z.object({
+  provider: z.enum(['google', 'github'], {
+    error: 'Provider must be google or github',
+  }),
+});
+
+export const oauthRegisterInitSchema = z.object({
   provider: z.enum(['google', 'github'], {
     error: 'Provider must be google or github',
   }),
@@ -57,16 +57,10 @@ export const oauthInitSchema = z.object({
   }),
 });
 
-/**
- * OAuth callback query parameters
- */
-export const oauthCallbackSchema = z.object({
-  code: z.string().min(1, 'Authorization code is required'),
-  state: z.string().min(1, 'State is required'),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-});
-
 // Export types
-export type OAuthInitInput = z.infer<typeof oauthInitSchema>;
-export type OAuthCallbackInput = z.infer<typeof oauthCallbackSchema>;
+export type OAuthLoginInitInput = z.infer<typeof oauthLoginInitSchema>;
+export type OAuthRegisterInitInput = z.infer<typeof oauthRegisterInitSchema>;
+export type OAuthTokenResponse = z.infer<typeof oauthTokenResponseSchema>;
+export type GoogleProfile = z.infer<typeof googleProfileSchema>;
+export type GitHubProfile = z.infer<typeof githubProfileSchema>;
+export type GitHubEmail = z.infer<typeof githubEmailSchema>;

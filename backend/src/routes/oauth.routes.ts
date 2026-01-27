@@ -1,27 +1,13 @@
-/**
- * OAuth Routes
- */
-
 import { Router } from 'express';
 import * as oauthController from '../controllers/oauth.controller.js';
 import { validateBody } from '../middleware/validate.js';
-import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
+import {
+  oauthLoginInitSchema,
+  oauthRegisterInitSchema,
+} from '../validators/oauth.validator.js';
 
 const router = Router();
-
-// ===================================
-// VALIDATION SCHEMAS
-// ===================================
-
-const oauthInitSchema = z.object({
-  provider: z.enum(['google', 'github'], {
-    error: 'Provider must be google or github',
-  }),
-  role: z.enum(['STUDENT', 'MENTOR', 'EMPLOYER'], {
-    error: 'Role must be STUDENT, MENTOR, or EMPLOYER',
-  }),
-});
 
 // ===================================
 // RATE LIMITERS
@@ -67,16 +53,27 @@ const oauthCallbackLimiter = rateLimit({
 // ===================================
 
 /**
- * @route   POST /api/v1/auth/oauth/init
- * @desc    Initialize OAuth flow (get authorization URL)
+ * @route   POST /api/v1/auth/oauth/login/init
+ * @desc    Initialize OAuth LOGIN flow (existing users only)
  * @access  Public
- * @body    { provider: 'google' | 'github', role: 'STUDENT' | 'MENTOR' | 'EMPLOYER' }
  */
 router.post(
-  '/init',
+  '/login/init',
   oauthInitLimiter,
-  validateBody(oauthInitSchema),
-  oauthController.initOAuth
+  validateBody(oauthLoginInitSchema),
+  oauthController.initOAuthLogin
+);
+
+/**
+ * @route   POST /api/v1/auth/oauth/register/init
+ * @desc    Initialize OAuth REGISTER flow (new users only)
+ * @access  Public
+ */
+router.post(
+  '/register/init',
+  oauthInitLimiter,
+  validateBody(oauthRegisterInitSchema),
+  oauthController.initOAuthRegister
 );
 
 /**
@@ -104,3 +101,5 @@ router.get(
 );
 
 export default router;
+
+// I think there are some flaws in authentication doc, as it doesn't state what will happen a person login using oauth as there's no email registered , so it created the user and naturally the user will be stuck as student role forever. So analyze the database make changes in the services for any loop hole that will cause future problems then enhance the authentication doc by analyzing the code and comments from our codebase thoroughly with better info. So that our frontend team doesn't get hold back. Don't assume everything. Fact check it. Also don't give frontend implementation examples and all. Just state flow and what it should. Don't make the authentication doc too lengthy, only necessary things and what frontend team  can ask. Also i have this summary you can take reference from it suggest on your own by thinking through. Don't blindly follow what frontend team says. Take your time understanding it and implement what's necessary with your own critical thinking:

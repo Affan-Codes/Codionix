@@ -16,6 +16,7 @@ import { prisma } from '../config/database.js';
 import { logger, trackOperation } from '../utils/logger.js';
 import {
   ConflictError,
+  NotFoundError,
   UnauthorizedError,
   ValidationError,
 } from '../utils/errors.js';
@@ -30,52 +31,20 @@ import {
 } from '../utils/oauthStateStore.js';
 import type {
   OAuthProvider,
-  OAuthInitRequest,
   OAuthInitResponse,
   OAuthUserData,
+  OAuthRegisterInitRequest,
+  OAuthLoginInitRequest,
+  OAuthRegisterState,
+  OAuthLoginState,
 } from '../types/oauth.types.js';
+import {
+  oauthTokenResponseSchema,
+  googleProfileSchema,
+  githubProfileSchema,
+  githubEmailSchema,
+} from '../validators/oauth.validator.js';
 import { z } from 'zod';
-
-// ===================================
-// RUNTIME VALIDATION SCHEMAS
-// ===================================
-
-const OAuthTokenResponseSchema = z.object({
-  access_token: z.string(),
-  token_type: z.string(),
-  scope: z.string(),
-  expires_in: z.number().optional(),
-  refresh_token: z.string().optional(),
-});
-
-const GoogleProfileSchema = z.object({
-  sub: z.string(),
-  email: z.email(),
-  email_verified: z.boolean(),
-  name: z.string(),
-  picture: z.string().optional(),
-  given_name: z.string().optional(),
-  family_name: z.string().optional(),
-});
-
-const GitHubProfileSchema = z.object({
-  id: z.number(),
-  login: z.string(),
-  email: z.email().nullable(),
-  name: z.string().nullable(),
-  avatar_url: z.string().nullable(),
-  bio: z.string().nullable(),
-  html_url: z.string(),
-  company: z.string().nullable(),
-  location: z.string().nullable(),
-});
-
-const GitHubEmailSchema = z.object({
-  email: z.email(),
-  primary: z.boolean(),
-  verified: z.boolean(),
-  visibility: z.string().nullable(),
-});
 
 // ===================================
 // OAUTH URLS
@@ -106,15 +75,47 @@ const GITHUB_SCOPES = ['user:email', 'read:user'];
 // ===================================
 
 /**
- * Initialize OAuth flow
- *
- * @param data - Provider and role selection
- * @returns Authorization URL with state token
+ * Initialize OAuth LOGIN flow
+ * MUST authenticate existing users ONLY
  */
-export async function initializeOAuth(
-  data: OAuthInitRequest
+export async function initializeOAuthLogin(
+  data: OAuthLoginInitRequest
 ): Promise<OAuthInitResponse> {
-  const tracker = trackOperation('oauth.init', undefined, {
+  const tracker = trackOperation('oauth.loginInit', undefined, {
+    provider: data.provider,
+  });
+
+  try {
+    const { provider } = data;
+
+    if (!['google', 'github'].includes(provider)) {
+      throw new ValidationError('Invalid OAuth provider');
+    }
+
+    const stateToken = storeOAuthState({
+      provider,
+      flow: 'login',
+    });
+
+    const authUrl = buildAuthorizationUrl(provider, stateToken);
+
+    tracker.success({ provider, flow: 'login' });
+
+    return { authUrl, expiresIn: 300 };
+  } catch (error) {
+    tracker.failure(error, { provider: data.provider });
+    throw error;
+  }
+}
+
+/**
+ * Initialize OAuth REGISTER flow
+ * MUST create new users ONLY
+ */
+export async function initializeOAuthRegister(
+  data: OAuthRegisterInitRequest
+): Promise<OAuthInitResponse> {
+  const tracker = trackOperation('oauth.registerInit', undefined, {
     provider: data.provider,
     role: data.role,
   });
@@ -122,37 +123,27 @@ export async function initializeOAuth(
   try {
     const { provider, role } = data;
 
-    // Validate provider
     if (!['google', 'github'].includes(provider)) {
       throw new ValidationError('Invalid OAuth provider');
     }
 
-    // Validate role
     if (!['STUDENT', 'MENTOR', 'EMPLOYER'].includes(role)) {
       throw new ValidationError('Invalid role');
     }
 
-    // Store state server-side
-    const stateToken = storeOAuthState({ provider, role });
+    const stateToken = storeOAuthState({
+      provider,
+      flow: 'register',
+      role,
+    });
 
-    // Build authorization URL
     const authUrl = buildAuthorizationUrl(provider, stateToken);
 
-    tracker.success({
-      provider,
-      role,
-      stateToken: stateToken.substring(0, 8) + '...',
-    });
+    tracker.success({ provider, flow: 'register', role });
 
-    return {
-      authUrl,
-      expiresIn: 300, // 5 minutes
-    };
+    return { authUrl, expiresIn: 300 };
   } catch (error) {
-    tracker.failure(error, {
-      provider: data.provider,
-      role: data.role,
-    });
+    tracker.failure(error, { provider: data.provider, role: data.role });
     throw error;
   }
 }
@@ -196,11 +187,6 @@ function buildAuthorizationUrl(provider: OAuthProvider, state: string): string {
 
 /**
  * Handle OAuth callback
- *
- * @param provider - OAuth provider
- * @param code - Authorization code from provider
- * @param state - State token from our init
- * @returns User data and JWT tokens
  */
 export async function handleOAuthCallback(
   provider: OAuthProvider,
@@ -210,79 +196,330 @@ export async function handleOAuthCallback(
   const tracker = trackOperation('oauth.callback', undefined, { provider });
 
   try {
-    // Validate and consume state (single-use)
     const oauthState = consumeOAuthState(state);
 
     if (!oauthState) {
       logger.warn('Invalid or expired OAuth state', {
         provider,
-        state: state.substring(0, 8) + '...',
         operation: 'oauth.callback',
-        outcome: 'invalid_state',
       });
       throw new UnauthorizedError('Invalid or expired OAuth session');
     }
 
-    // Verify provider matches
     if (oauthState.provider !== provider) {
       logger.error('Provider mismatch in OAuth callback', {
         expected: oauthState.provider,
         received: provider,
         operation: 'oauth.callback',
-        outcome: 'provider_mismatch',
       });
       throw new UnauthorizedError('OAuth provider mismatch');
     }
 
-    // Exchange code for access token
     const accessToken = await exchangeCodeForToken(provider, code);
+    const oauthProfile = await fetchUserProfile(provider, accessToken);
 
-    // Get user profile from provider
-    const oauthUser = await fetchUserProfile(provider, accessToken);
-
-    // Add role from state
-    const userData: OAuthUserData = {
-      ...oauthUser,
-      role: oauthState.role,
-    };
-
-    // Create or update user in database
-    const { user, isNewUser } = await upsertOAuthUser(userData);
-
-    // Generate JWT tokens
-    const tokenPayload: JwtPayload = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    };
-
-    const tokens = generateTokenPair(tokenPayload);
-
-    // Store refresh token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    await prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshToken,
-        expiresAt,
-      },
-    });
-
-    tracker.success({
-      provider,
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      isNewUser,
-    });
-
-    return { user, tokens };
+    // FLOW DISPATCH
+    if (oauthState.flow === 'login') {
+      return await handleOAuthLogin(oauthState, oauthProfile, tracker);
+    } else {
+      return await handleOAuthRegister(oauthState, oauthProfile, tracker);
+    }
   } catch (error) {
     tracker.failure(error, { provider });
     throw error;
   }
+}
+
+/**
+ * Handle OAuth LOGIN callback
+ * MUST authenticate existing users ONLY
+ * MAY link provider if missing
+ */
+async function handleOAuthLogin(
+  _state: OAuthLoginState,
+  profile: Omit<OAuthUserData, 'role'>,
+  tracker: ReturnType<typeof trackOperation>
+): Promise<{ user: any; tokens: TokenPair }> {
+  const { provider, email, providerId } = profile;
+
+  const existingOAuthUser = await prisma.user.findFirst({
+    where:
+      provider === 'google'
+        ? { googleId: providerId }
+        : { githubId: providerId },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      fullName: true,
+      isEmailVerified: true,
+      profilePictureUrl: true,
+      bio: true,
+      createdAt: true,
+    },
+  });
+
+  if (existingOAuthUser) {
+    if (existingOAuthUser.email !== email) {
+      logger.info('OAuth email changed, updating user record', {
+        userId: existingOAuthUser.id,
+        oldEmail: existingOAuthUser.email,
+        newEmail: email,
+        provider,
+        operation: 'oauth.login',
+      });
+
+      const updatedUser = await prisma.user.update({
+        where: { id: existingOAuthUser.id },
+        data: { email },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          fullName: true,
+          isEmailVerified: true,
+          profilePictureUrl: true,
+          bio: true,
+          createdAt: true,
+        },
+      });
+
+      const tokens = await generateAndStoreTokens(updatedUser);
+
+      tracker.success({
+        userId: updatedUser.id,
+        email: updatedUser.email,
+        flow: 'login',
+        method: 'oauth_provider',
+        emailUpdated: true,
+      });
+
+      return { user: updatedUser, tokens };
+    }
+
+    // User authenticated via OAuth provider
+    const tokens = await generateAndStoreTokens(existingOAuthUser);
+
+    tracker.success({
+      userId: existingOAuthUser.id,
+      email: existingOAuthUser.email,
+      flow: 'login',
+      method: 'oauth_provider',
+    });
+
+    return { user: existingOAuthUser, tokens };
+  }
+
+  const existingEmailUser = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      fullName: true,
+      isEmailVerified: true,
+      profilePictureUrl: true,
+      bio: true,
+      createdAt: true,
+      googleId: true,
+      githubId: true,
+    },
+  });
+
+  if (existingEmailUser) {
+    // Link OAuth provider to existing account
+    const updatedUser = await prisma.user.update({
+      where: { id: existingEmailUser.id },
+      data: {
+        ...(provider === 'google' && { googleId: providerId }),
+        ...(provider === 'github' && { githubId: providerId }),
+        ...(profile.avatarUrl && !existingEmailUser.profilePictureUrl
+          ? { profilePictureUrl: profile.avatarUrl }
+          : {}),
+        ...(profile.bio && !existingEmailUser.bio ? { bio: profile.bio } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        fullName: true,
+        isEmailVerified: true,
+        profilePictureUrl: true,
+        bio: true,
+        createdAt: true,
+      },
+    });
+
+    const tokens = await generateAndStoreTokens(updatedUser);
+
+    logger.info('OAuth provider linked to existing account', {
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      provider,
+      operation: 'oauth.login',
+    });
+
+    tracker.success({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      flow: 'login',
+      method: 'link_provider',
+    });
+
+    return { user: updatedUser, tokens };
+  }
+
+  logger.warn('OAuth login attempt for non-existent account', {
+    email,
+    provider,
+    operation: 'oauth.login',
+  });
+
+  throw new NotFoundError(
+    'No account found with this email. Please register first.'
+  );
+}
+
+/**
+ * Handle OAuth REGISTER callback
+ * MUST create new users ONLY
+ * MUST wrap user + refresh token in transaction
+ */
+async function handleOAuthRegister(
+  state: OAuthRegisterState,
+  profile: Omit<OAuthUserData, 'role'>,
+  tracker: ReturnType<typeof trackOperation>
+): Promise<{ user: any; tokens: TokenPair }> {
+  const { provider, email, providerId, fullName, avatarUrl, bio } = profile;
+  const { role } = state;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existingUser = await tx.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            ...(provider === 'google' ? [{ googleId: providerId }] : []),
+            ...(provider === 'github' ? [{ githubId: providerId }] : []),
+          ],
+        },
+      });
+
+      if (existingUser) {
+        throw new ConflictError(
+          'Account already exists. Please use login instead.'
+        );
+      }
+
+      const newUser = await tx.user.create({
+        data: {
+          email,
+          fullName,
+          role,
+          isEmailVerified: true,
+          emailVerifiedAt: new Date(),
+          profilePictureUrl: avatarUrl ?? null,
+          bio: bio ?? null,
+          skills: [],
+          ...(provider === 'google' && { googleId: providerId }),
+          ...(provider === 'github' && { githubId: providerId }),
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          fullName: true,
+          isEmailVerified: true,
+          profilePictureUrl: true,
+          bio: true,
+          createdAt: true,
+        },
+      });
+
+      const tokenPayload: JwtPayload = {
+        userId: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+      };
+
+      const tokens = generateTokenPair(tokenPayload);
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await tx.refreshToken.create({
+        data: {
+          userId: newUser.id,
+          token: tokens.refreshToken,
+          expiresAt,
+        },
+      });
+
+      return { user: newUser, tokens };
+    });
+
+    logger.info('New user created via OAuth', {
+      userId: result.user.id,
+      email: result.user.email,
+      provider,
+      role: result.user.role,
+      operation: 'oauth.register',
+    });
+
+    tracker.success({
+      userId: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      flow: 'register',
+    });
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      logger.error('OAuth registration race condition detected', {
+        provider,
+        email,
+        error: error.message,
+        operation: 'oauth.register',
+      });
+
+      throw new ConflictError(
+        'Account already exists. Please use login instead.'
+      );
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Helper: Generate JWT tokens and store refresh token
+ */
+async function generateAndStoreTokens(user: {
+  id: string;
+  email: string;
+  role: string;
+}): Promise<TokenPair> {
+  const tokenPayload: JwtPayload = {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const tokens = generateTokenPair(tokenPayload);
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: tokens.refreshToken,
+      expiresAt,
+    },
+  });
+
+  return tokens;
 }
 
 // ===================================
@@ -304,9 +541,7 @@ async function exchangeCodeForToken(
     if (provider === 'google') {
       const response = await fetch(GOOGLE_TOKEN_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           code,
           client_id: env.GOOGLE_CLIENT_ID,
@@ -318,11 +553,19 @@ async function exchangeCodeForToken(
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`Google token exchange failed: ${error}`);
+        logger.error('Google token exchange failed', {
+          provider,
+          statusCode: response.status,
+          error,
+          operation: 'oauth.exchangeToken',
+        });
+        throw new UnauthorizedError(
+          'Authentication with Google failed. Please try again or contact support.'
+        );
       }
 
       const rawData: unknown = await response.json();
-      const data = OAuthTokenResponseSchema.parse(rawData);
+      const data = oauthTokenResponseSchema.parse(rawData);
 
       tracker.success({ provider });
       return data.access_token;
@@ -345,11 +588,19 @@ async function exchangeCodeForToken(
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(`GitHub token exchange failed: ${error}`);
+        logger.error('GitHub token exchange failed', {
+          provider,
+          statusCode: response.status,
+          error,
+          operation: 'oauth.exchangeToken',
+        });
+        throw new UnauthorizedError(
+          'Authentication with GitHub failed. Please try again or contact support.'
+        );
       }
 
       const rawData: unknown = await response.json();
-      const data = OAuthTokenResponseSchema.parse(rawData);
+      const data = oauthTokenResponseSchema.parse(rawData);
 
       tracker.success({ provider });
       return data.access_token;
@@ -363,7 +614,9 @@ async function exchangeCodeForToken(
         errors: error.issues,
         operation: 'oauth.exchangeToken',
       });
-      throw new Error(`Invalid response from ${provider} token endpoint`);
+      throw new UnauthorizedError(
+        `Invalid response from ${provider}. Please contact support.`
+      );
     }
 
     tracker.failure(error, { provider });
@@ -397,7 +650,7 @@ async function fetchUserProfile(
       }
 
       const rawProfile: unknown = await response.json();
-      const profile = GoogleProfileSchema.parse(rawProfile);
+      const profile = googleProfileSchema.parse(rawProfile);
 
       // Validate email is verified
       if (!profile.email_verified) {
@@ -430,7 +683,7 @@ async function fetchUserProfile(
       }
 
       const rawProfile: unknown = await profileResponse.json();
-      const profile = GitHubProfileSchema.parse(rawProfile);
+      const profile = githubProfileSchema.parse(rawProfile);
 
       // Fetch emails (GitHub doesn't always include email in profile)
       const emailResponse = await fetch(GITHUB_EMAIL_URL, {
@@ -445,7 +698,7 @@ async function fetchUserProfile(
       }
 
       const rawEmails: unknown = await emailResponse.json();
-      const emails = z.array(GitHubEmailSchema).parse(rawEmails);
+      const emails = z.array(githubEmailSchema).parse(rawEmails);
 
       // Get primary verified email
       const primaryEmail = emails.find((e) => e.primary && e.verified);
@@ -481,174 +734,6 @@ async function fetchUserProfile(
     }
 
     tracker.failure(error, { provider });
-    throw error;
-  }
-}
-
-// ===================================
-// USER UPSERT
-// ===================================
-
-/**
- * Create or update user from OAuth data
- */
-async function upsertOAuthUser(
-  data: OAuthUserData
-): Promise<{ user: any; isNewUser: boolean }> {
-  const tracker = trackOperation('oauth.upsertUser', undefined, {
-    provider: data.provider,
-    email: data.email,
-  });
-
-  try {
-    const { provider, providerId, email, fullName, avatarUrl, bio, role } =
-      data;
-
-    // Check if user exists with this OAuth provider
-    const existingOAuthUser = await prisma.user.findFirst({
-      where:
-        provider === 'google'
-          ? { googleId: providerId }
-          : { githubId: providerId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        fullName: true,
-        isEmailVerified: true,
-        profilePictureUrl: true,
-        bio: true,
-        createdAt: true,
-      },
-    });
-
-    if (existingOAuthUser) {
-      // User exists with this OAuth provider - just return
-      tracker.success({
-        userId: existingOAuthUser.id,
-        email: existingOAuthUser.email,
-        isNewUser: false,
-      });
-
-      return { user: existingOAuthUser, isNewUser: false };
-    }
-
-    // Check if user exists with this email (email/password account)
-    const existingEmailUser = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        googleId: true,
-        githubId: true,
-      },
-    });
-
-    if (existingEmailUser) {
-      // User has email/password account - link OAuth provider
-      const updatedUser = await prisma.user.update({
-        where: { id: existingEmailUser.id },
-        data: {
-          ...(provider === 'google' && { googleId: providerId }),
-          ...(provider === 'github' && { githubId: providerId }),
-          // Update profile picture if not set
-          ...(avatarUrl &&
-          !existingEmailUser.googleId &&
-          !existingEmailUser.githubId
-            ? { profilePictureUrl: avatarUrl }
-            : {}),
-          // Update bio if not set
-          ...(bio && { bio }),
-        },
-        select: {
-          id: true,
-          email: true,
-          role: true,
-          fullName: true,
-          isEmailVerified: true,
-          profilePictureUrl: true,
-          bio: true,
-          createdAt: true,
-        },
-      });
-
-      logger.info('OAuth provider linked to existing account', {
-        userId: updatedUser.id,
-        email: updatedUser.email,
-        provider,
-        operation: 'oauth.upsertUser',
-      });
-
-      tracker.success({
-        userId: updatedUser.id,
-        email: updatedUser.email,
-        isNewUser: false,
-        linked: true,
-      });
-
-      return { user: updatedUser, isNewUser: false };
-    }
-
-    // New user - create account
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        fullName,
-        role,
-        isEmailVerified: true, // OAuth providers verify email
-        emailVerifiedAt: new Date(),
-        profilePictureUrl: avatarUrl ?? null,
-        bio: bio ?? null,
-        skills: [],
-        ...(provider === 'google' && { googleId: providerId }),
-        ...(provider === 'github' && { githubId: providerId }),
-      },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        fullName: true,
-        isEmailVerified: true,
-        profilePictureUrl: true,
-        bio: true,
-        createdAt: true,
-      },
-    });
-
-    logger.info('New user created via OAuth', {
-      userId: newUser.id,
-      email: newUser.email,
-      provider,
-      role: newUser.role,
-      operation: 'oauth.upsertUser',
-    });
-
-    tracker.success({
-      userId: newUser.id,
-      email: newUser.email,
-      role: newUser.role,
-      isNewUser: true,
-    });
-
-    return { user: newUser, isNewUser: true };
-  } catch (error) {
-    // Check for unique constraint violation
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      logger.error('OAuth user creation race condition', {
-        provider: data.provider,
-        email: data.email,
-        error: error.message,
-        operation: 'oauth.upsertUser',
-      });
-
-      throw new ConflictError('Account with this email already exists');
-    }
-
-    tracker.failure(error, {
-      provider: data.provider,
-      email: data.email,
-    });
     throw error;
   }
 }

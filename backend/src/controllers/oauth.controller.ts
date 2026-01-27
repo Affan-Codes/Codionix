@@ -6,27 +6,49 @@ import type { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { ApiResponse } from '../utils/apiResponse.js';
 import * as oauthService from '../services/oauth.service.js';
-import { ValidationError } from '../utils/errors.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
-import type { OAuthCallbackQuery } from '../types/oauth.types.js';
+import type {
+  OAuthLoginInitInput,
+  OAuthRegisterInitInput,
+} from '../validators/oauth.validator.js';
+
+interface OAuthCallbackQuery {
+  code?: string;
+  state?: string;
+  error?: string;
+  error_description?: string;
+}
 
 /**
- * Initialize OAuth flow
- * POST /api/v1/auth/oauth/init
+ * Initialize OAuth LOGIN flow
+ * POST /api/v1/auth/oauth/login/init
  */
-export const initOAuth = asyncHandler(async (req: Request, res: Response) => {
-  const { provider, role } = req.body;
+export const initOAuthLogin = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { provider } = req.body as OAuthLoginInitInput;
 
-  // Validate request
-  if (!provider || !role) {
-    throw new ValidationError('Provider and role are required');
+    const result = await oauthService.initializeOAuthLogin({ provider });
+
+    ApiResponse.success(res, result);
   }
+);
+/**
+ * Initialize OAuth REGISTER flow
+ * POST /api/v1/auth/oauth/register/init
+ */
+export const initOAuthRegister = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { provider, role } = req.body as OAuthRegisterInitInput;
 
-  const result = await oauthService.initializeOAuth({ provider, role });
+    const result = await oauthService.initializeOAuthRegister({
+      provider,
+      role,
+    });
 
-  ApiResponse.success(res, result);
-});
+    ApiResponse.success(res, result);
+  }
+);
 
 /**
  * Handle Google OAuth callback
@@ -35,7 +57,7 @@ export const initOAuth = asyncHandler(async (req: Request, res: Response) => {
 export const googleCallback = asyncHandler(
   async (req: Request, res: Response) => {
     const { code, state, error, error_description } =
-      req.query as unknown as OAuthCallbackQuery;
+      req.query as OAuthCallbackQuery;
 
     // Check for OAuth errors from Google
     if (error) {
@@ -93,7 +115,7 @@ export const googleCallback = asyncHandler(
 export const githubCallback = asyncHandler(
   async (req: Request, res: Response) => {
     const { code, state, error, error_description } =
-      req.query as unknown as OAuthCallbackQuery;
+      req.query as OAuthCallbackQuery;
 
     // Check for OAuth errors from GitHub
     if (error) {

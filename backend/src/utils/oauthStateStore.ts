@@ -14,7 +14,11 @@
 
 import { randomBytes } from 'crypto';
 import { logger } from './logger.js';
-import type { OAuthState } from '../types/oauth.types.js';
+import type {
+  OAuthLoginState,
+  OAuthRegisterState,
+  OAuthState,
+} from '../types/oauth.types.js';
 
 // ===================================
 // IN-MEMORY STORE
@@ -90,25 +94,42 @@ export function generateNonce(): string {
  * @returns state token to include in OAuth URL
  */
 export function storeOAuthState(
-  state: Omit<OAuthState, 'createdAt' | 'expiresAt' | 'nonce'>
+  state:
+    | Omit<OAuthLoginState, 'createdAt' | 'expiresAt' | 'nonce'>
+    | Omit<OAuthRegisterState, 'createdAt' | 'expiresAt' | 'nonce'>
 ): string {
   const token = generateStateToken();
   const nonce = generateNonce();
   const now = Date.now();
 
-  const fullState: OAuthState = {
-    ...state,
-    nonce,
-    createdAt: now,
-    expiresAt: now + STATE_EXPIRY_MS,
-  };
+  let fullState: OAuthState;
+
+  if (state.flow === 'login') {
+    fullState = {
+      provider: state.provider,
+      flow: 'login',
+      nonce,
+      createdAt: now,
+      expiresAt: now + STATE_EXPIRY_MS,
+    } satisfies OAuthLoginState;
+  } else {
+    fullState = {
+      provider: state.provider,
+      flow: 'register',
+      role: state.role,
+      nonce,
+      createdAt: now,
+      expiresAt: now + STATE_EXPIRY_MS,
+    } satisfies OAuthRegisterState;
+  }
 
   stateStore.set(token, fullState);
 
   logger.debug('OAuth state stored', {
-    token: token.substring(0, 8) + '...', // Log only prefix for security
+    token: token.substring(0, 8) + '...',
     provider: state.provider,
-    role: state.role,
+    flow: state.flow,
+    ...(state.flow === 'register' && { role: state.role }),
     expiresIn: `${STATE_EXPIRY_MS / 1000}s`,
     storeSize: stateStore.size,
     operation: 'oauth.storeState',
@@ -137,7 +158,6 @@ export function consumeOAuthState(token: string): OAuthState | null {
     return null;
   }
 
-  // Check expiration
   if (state.expiresAt < Date.now()) {
     stateStore.delete(token);
     logger.warn('OAuth state expired', {
@@ -150,13 +170,13 @@ export function consumeOAuthState(token: string): OAuthState | null {
     return null;
   }
 
-  // Delete state (single-use)
   stateStore.delete(token);
 
   logger.debug('OAuth state consumed', {
     token: token.substring(0, 8) + '...',
     provider: state.provider,
-    role: state.role,
+    flow: state.flow,
+    ...(state.flow === 'register' && { role: state.role }),
     ageMs: Date.now() - state.createdAt,
     operation: 'oauth.consumeState',
   });
