@@ -1,6 +1,6 @@
 # Users & Profiles API
 
-Base URL: `https://api.codionix.com/api/v1/users`
+**Base URL:** `https://api.codionix.com/api/v1/users`
 
 All endpoints require authentication unless specified.
 
@@ -99,13 +99,13 @@ Update authenticated user's profile. All fields are optional. Only provided fiel
 | `bio`         | -   | 500 | String                             | Trimmed automatically                      |
 | `linkedinUrl` | -   | -   | Valid URL                          | Must be full URL with protocol             |
 | `githubUrl`   | -   | -   | Valid URL                          | Must be full URL with protocol             |
-| `skills`      | 1   | 20  | Array of strings (each 1-50 chars) | Each skill trimmed, empty strings rejected |
+| `skills`      | -   | 20  | Array of strings (each 1-50 chars) | Each skill trimmed, empty strings rejected |
 
 **Behavior Notes:**
 
 - **Omitted fields:** Not updated (remain unchanged)
 - **`null` values:** Field is cleared (set to NULL in database)
-- **Empty arrays:** Not allowed for `skills` (must have at least 1 skill or omit the field)
+- **Empty arrays:** Allowed for `skills` (user can have zero skills)
 - **Duplicate skills:** Allowed (backend does not deduplicate)
 - **Skill validation:** Each skill must be 1-50 characters after trimming
 
@@ -262,7 +262,7 @@ Upload or replace user's profile picture. Old avatar is automatically deleted.
 
 **`DELETE /upload/avatar`**
 
-Remove user's profile picture. No effect if user has no avatar.
+Remove user's profile picture.
 
 **Authentication:** Required  
 **Rate Limit:** 10 requests per 15 minutes
@@ -295,6 +295,8 @@ Remove user's profile picture. No effect if user has no avatar.
   }
 }
 ```
+
+**CRITICAL:** Endpoint throws 400 error if user has no avatar (not a silent no-op). Frontend should check if `profilePictureUrl` exists before calling.
 
 ---
 
@@ -454,39 +456,91 @@ Returns complete updated preferences (same shape as GET).
 
 ---
 
+## Email Mutability
+
+### Via API
+
+**User Profile Endpoint (PATCH /me):**
+
+- Email field **NOT** included in update validator
+- Email **CANNOT** be changed via `PATCH /me`
+
+### Via OAuth Login
+
+**Automatic Email Update:**
+
+- If OAuth provider email changes, backend automatically updates user email
+- Happens during OAuth login flow
+- Example: User changes email at Google → next Google login updates Codionix email
+- This is the **ONLY** way email can change after account creation
+
+**Code Evidence:**
+
+```typescript
+// oauth.service.ts - handleOAuthLogin()
+if (existingOAuthUser.email !== email) {
+  await prisma.user.update({
+    where: { id: existingOAuthUser.id },
+    data: { email }, // Auto-update from provider
+  });
+}
+```
+
+**Summary:**
+
+- Email is immutable via API endpoints
+- Email MAY auto-update during OAuth login if provider email changed
+- Email/password users: Email is permanently fixed (no update mechanism)
+- OAuth users: Email syncs with OAuth provider
+
+---
+
 ## Common Questions
 
-### Q: Can I change my email address?
+**Q: Can users have both email/password AND OAuth?**  
+**A:** Yes. Users can link multiple auth methods to same account (matched by email).
 
-**A:** No. Email is immutable. Create a new account if you need a different email.
+**Q: What if OAuth email changes at provider?**  
+**A:** Email automatically updated in database on next OAuth login (preserves account).
 
-### Q: What happens if I upload an avatar while one already exists?
+**Q: Can admin users be created via OAuth?**  
+**A:** No. ADMIN role must be assigned manually in database. OAuth only allows STUDENT, MENTOR, EMPLOYER.
 
-**A:** Old avatar is automatically deleted from Cloudinary. New avatar replaces it.
+**Q: Can I change my email?**  
+**A:**
 
-### Q: Can I have both Google and GitHub linked to the same account?
+- Email/password users: No way to change email
+- OAuth users: Email automatically syncs with OAuth provider on login
 
-**A:** Yes. If you register with email/password, then login via OAuth, the OAuth provider is linked to your existing account (matched by email).
+**Q: Can I change my role?**  
+**A:** No. Role cannot be changed via API. Admin must update database directly.
 
-### Q: What if I register via OAuth and then try to set a password?
-
-**A:** Not supported. OAuth accounts cannot set passwords via API. Email/password login is permanently disabled for OAuth-only accounts.
-
-### Q: Are skills case-sensitive?
-
+**Q: Are skills case-sensitive?**  
 **A:** Yes. "JavaScript" and "javascript" are treated as different skills. No deduplication or normalization is performed.
 
-### Q: Can I clear my bio or phone number?
-
+**Q: Can I clear my bio or phone number?**  
 **A:** Yes. Send `"bio": null` or `"phone": null` in PATCH /me request.
 
-### Q: Can I upload the same resume for multiple applications?
+**Q: Can I have zero skills?**  
+**A:** Yes. Send `"skills": []` to clear all skills.
 
+**Q: Can I upload the same resume for multiple applications?**  
 **A:** Yes. Resume URL can be reused across applications. Upload once, use many times.
 
-### Q: What happens to my data if I'm rate-limited?
-
+**Q: What happens to my data if I'm rate-limited?**  
 **A:** Nothing. Rate limit blocks the request entirely. No partial updates occur.
+
+**Q: What happens if I delete avatar but deletion from Cloudinary fails?**  
+**A:** Old avatar remains in Cloudinary but is no longer referenced in your profile. Your `profilePictureUrl` is still set to `null`.
+
+**Q: Can I upload a new avatar if I already have one?**  
+**A:** Yes. Old avatar is automatically deleted and replaced with new one.
+
+**Q: Will uploading a new avatar fail if I don't have an existing avatar?**  
+**A:** No. Upload works regardless of whether you have an existing avatar.
+
+**Q: Will deleting avatar fail if I don't have an avatar?**  
+**A:** Yes. DELETE /avatar throws 400 error if `profilePictureUrl` is `null`. Frontend should check before calling.
 
 ---
 
@@ -500,4 +554,4 @@ Returns complete updated preferences (same shape as GET).
 | `RATE_LIMIT_EXCEEDED` | 429         | Too many requests                 |
 | `INTERNAL_ERROR`      | 500         | Server error (contact support)    |
 
-All error responses include `errorId` and `correlationId` for support:
+All error responses include `errorId` and `correlationId` for support.
