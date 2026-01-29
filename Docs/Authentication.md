@@ -611,6 +611,11 @@ Reset password using token from email.
 | Google   | `{BACKEND_URL}/api/v1/auth/google/callback` | `userinfo.email`, `userinfo.profile` | Required                 |
 | GitHub   | `{BACKEND_URL}/api/v1/auth/github/callback` | `user:email`, `read:user`            | Required (primary email) |
 
+**Example Production Callback URLs:**
+
+- Google: `https://api.codionix.com/api/v1/auth/google/callback`
+- GitHub: `https://api.codionix.com/api/v1/auth/github/callback`
+
 **Email Verification Requirement:**
 
 - **Google:** User's email must be verified at Google
@@ -666,6 +671,8 @@ Reset password using token from email.
 ---
 
 ### OAuth Login Flow
+
+**Important:** Login flow is for **existing users only**. New users must use the Register flow.
 
 **Step 1: Initialize OAuth Login**
 
@@ -729,17 +736,34 @@ Generate OAuth authorization URL for login.
 1. Validates state token (exists, not expired, matches provider)
 2. Exchanges code for access token at provider
 3. Fetches user profile from provider
-4. **LOGIN LOGIC:**
-   - Checks if provider ID exists in database (`googleId` or `githubId`)
-   - If YES → Authenticate existing user
-   - If NO but email exists → Link provider to existing account
-   - If NO and email doesn't exist → Fail with 404
+4. **LOGIN LOGIC (Ordered Priority):**
+   - **Step A:** Check if provider ID linked (`googleId` or `githubId`) → Authenticate user with existing account
+   - **Step B:** If provider ID not found, check if email exists → Link provider to existing account and authenticate
+   - **Step C:** If neither provider ID nor email exists → Fail with 404, user must register first
 
 **Success Redirect:**
 
 ```
 {FRONTEND_URL}/auth/oauth/success#access_token={token}&refresh_token={token}
 ```
+
+**Account Linking Details (Step B):**
+
+When user already has account via email/password and logs in with OAuth, the provider gets linked:
+
+```typescript
+// Example: User registered with email/password, then logs in with Google
+{
+  googleId: 'google_provider_id', // Now linked
+  // Other fields unchanged
+}
+```
+
+After linking, user can authenticate using:
+
+- Email + password
+- Google OAuth
+- GitHub OAuth (if also linked)
 
 **Error Redirect:**
 
@@ -749,12 +773,19 @@ Generate OAuth authorization URL for login.
 
 **Error Codes:**
 
-| Code                 | Cause                                 |
-| -------------------- | ------------------------------------- |
-| `missing_parameters` | No code or state in callback          |
-| `callback_failed`    | Backend processing error              |
-| `access_denied`      | User denied authorization at provider |
-| `unverified_email`   | Email not verified at provider        |
+| Code                 | Cause                                                |
+| -------------------- | ---------------------------------------------------- |
+| `missing_parameters` | No code or state in callback                         |
+| `callback_failed`    | Backend processing error (check logs for details)    |
+| `access_denied`      | User denied authorization at provider                |
+| `unverified_email`   | Email not verified at provider (Google or GitHub)    |
+| (Implied 404)        | No account found - user must use REGISTER flow first |
+
+**What Happens If Account Doesn't Exist:**
+
+- User is redirected to `/auth/oauth/error?provider={provider}&error=callback_failed`
+- Error response body (if accessible): 404 Not Found - "No account exists for this email"
+- **User must use OAuth Register flow to create account**
 
 ---
 
@@ -784,6 +815,8 @@ const refreshToken = params.get("refresh_token");
 ---
 
 ### OAuth Register Flow
+
+**Important:** Register flow is for **new users only**. Existing users must use the Login flow. The role is permanently assigned during registration and cannot be changed later via OAuth.
 
 **Step 1: Initialize OAuth Register**
 
@@ -823,12 +856,14 @@ Generate OAuth authorization URL for registration.
 {
   provider: 'github',
   flow: 'register',
-  role: 'STUDENT', // User-selected role
+  role: 'STUDENT', // User-selected role - PERMANENT
   nonce: '...',
   createdAt: ...,
   expiresAt: ...
 }
 ```
+
+**CRITICAL:** Role selected here is permanent and becomes the user's account role.
 
 ---
 
@@ -839,81 +874,110 @@ Generate OAuth authorization URL for registration.
 1. Validates state token
 2. Exchanges code for access token
 3. Fetches user profile from provider
-4. **REGISTER LOGIC:**
-   - Checks if email OR provider ID exists
-   - If YES → Fail with 409 Conflict
-   - If NO → Create new user with:
-     - `email` from provider
-     - `fullName` from provider
-     - `role` from state token
-     - `isEmailVerified: true` (trusted provider)
-     - `googleId` or `githubId` set
-     - `passwordHash: null` (OAuth-only account)
-     - Optional: `profilePictureUrl`, `bio` from provider
+4. **REGISTER LOGIC - SAFETY CHECKS:**
+   - Check if email exists → Fail with 409 Conflict
+   - Check if provider ID already linked (`googleId` or `githubId`) → Fail with 409 Conflict
+   - If both checks pass → Create new user atomically (transaction)
 
-**Account Creation (Atomic Transaction):**
+**Account Creation Details:**
+
+When user doesn't exist, a new account is created with:
+
+| Field                    | Value                              | Notes                                        |
+| ------------------------ | ---------------------------------- | -------------------------------------------- |
+| `email`                  | From OAuth provider (verified)     | Required, unique, taken from provider        |
+| `fullName`               | From OAuth provider                | Required, taken from provider profile        |
+| `role`                   | From register init request         | **PERMANENT** (STUDENT, MENTOR, or EMPLOYER) |
+| `passwordHash`           | `null`                             | OAuth-only account, no password              |
+| `googleId` OR `githubId` | Provider-specific ID               | Links account to provider                    |
+| `isEmailVerified`        | `true`                             | Trusted directly from OAuth provider         |
+| `emailVerifiedAt`        | Current timestamp                  | Set immediately                              |
+| `profilePictureUrl`      | From OAuth provider (if available) | Avatar copied to profile                     |
+| `bio`                    | From OAuth provider (if available) | Bio copied from provider                     |
+| `skills`                 | Empty array `[]`                   | User must add skills later via profile edit  |
+
+**Transaction Guarantee:**
+
+User and refresh token created atomically - both succeed or both fail:
 
 ```typescript
-// Pseudocode
-tx.user.create({
-  email: profile.email,
-  fullName: profile.fullName,
-  role: state.role, // From init request
-  googleId: profile.providerId, // OR githubId
-  isEmailVerified: true,
-  emailVerifiedAt: new Date(),
-  profilePictureUrl: profile.avatarUrl,
-  bio: profile.bio,
-  passwordHash: null, // No password
-  skills: []
-})
-
-tx.refreshToken.create({
-  userId: newUser.id,
-  token: refreshToken,
-  expiresAt: +7 days
-})
+// Both operations happen together or not at all
+tx.user.create({ ... })
+tx.refreshToken.create({ token, expiresAt: +7 days })
 ```
 
-**Success Redirect:** Same as login flow  
+**Success Redirect:** Same as login flow (tokens in URL fragment)  
 **Error Redirect:** Same as login flow
+
+**Error Responses:**
+
+**409 Conflict — Account Already Exists:**
+
+```
+{FRONTEND_URL}/auth/oauth/error?provider=google&error=callback_failed
+```
+
+Error body (if accessible): "Account already exists. Please use login instead."
+
+**Causes:**
+
+- Email already registered in system
+- Provider ID already linked to another account
+
+**Action for Frontend:**
+
+User should use OAuth Login flow instead (to link the provider or authenticate with existing account).
 
 ---
 
-### OAuth Account Linking
+### OAuth Account Linking Summary
 
-**Scenario:** User registers with email/password, later uses OAuth.
+**Linking Mechanisms:**
 
-**LOGIN Flow Behavior:**
+1. **Automatic Linking on Login:**
+   - User logs in with OAuth (Login flow)
+   - If provider not linked but email exists → Provider gets linked
+   - User authenticated with existing account
 
-1. User clicks "Sign in with Google"
-2. Backend checks if `googleId` exists → NO
-3. Backend checks if email exists → YES
-4. Backend links Google account:
-   ```typescript
-   user.update({
-     googleId: profile.providerId,
-     profilePictureUrl: profile.avatarUrl || user.profilePictureUrl,
-     bio: profile.bio || user.bio,
-   });
-   ```
-5. User authenticated with existing account
+2. **Explicit Linking (Email + Password First):**
+   - User registers with email/password
+   - Later uses OAuth Login → Provider linked to email account
+   - User can now authenticate 3 ways: email/password, Google, GitHub
 
-**CRITICAL:**
+3. **Cannot Link on Register:**
+   - Register flow creates new users only
+   - Fails if account exists (returns 409)
+   - No linking happens during registration
 
-- Linking happens ONLY in LOGIN flow
-- REGISTER flow fails if email exists
-- User can have both `googleId` AND `githubId`
-- User can authenticate with any linked provider
+**Account Scenario Examples:**
 
-**Example:**
+| Scenario                               | Action                    | Result                                                |
+| -------------------------------------- | ------------------------- | ----------------------------------------------------- |
+| User has email account                 | Uses OAuth Login          | Provider linked, user authenticated                   |
+| User has email account + Google linked | Uses GitHub Login         | GitHub linked, user authenticated with 3 auth methods |
+| Email already exists                   | Uses OAuth Register       | Error 409 - must use Login flow                       |
+| User registers via Google              | Uses GitHub in Login flow | GitHub linked, user authenticated                     |
 
-```
-1. User registers: email/password → account created
-2. User logs in with Google → googleId linked to account
-3. User logs in with GitHub → githubId linked to account
-4. User can now authenticate 3 ways: email/password, Google, GitHub
-```
+---
+
+### Role Assignment in OAuth
+
+**Critical Behavior:**
+
+- **Register Flow:** Role assigned by frontend during init request (`/oauth/register/init`)
+  - Role selection is **MANDATORY**
+  - Role is **PERMANENT** - cannot change via OAuth later
+  - Stored in database and used for all authorization checks
+- **Login Flow:** Role ignored
+  - User authenticates with existing account's role
+  - Role cannot be changed via OAuth
+  - Must use dedicated role update endpoint if role change needed
+
+**To Change User Role After Registration:**
+
+- Cannot use OAuth flows
+- Must use dedicated user/admin endpoint (outside scope of this doc)
+- Requires authentication and authorization checks
 
 ---
 
@@ -937,15 +1001,13 @@ State expired:
 
 **Email Not Verified at Provider:**
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Google email not verified"
-  }
-}
+OAuth flow fails during email validation:
+
 ```
+{FRONTEND_URL}/auth/oauth/error?provider=google&error=unverified_email
+```
+
+Frontend should display: "Please verify your email at Google/GitHub first."
 
 **Account Already Exists (REGISTER Flow):**
 
@@ -962,6 +1024,11 @@ Frontend should display: "Account already exists. Please use login instead."
 ```
 
 Frontend should display: "No account found. Please register first."
+
+**How to Differentiate:** Both return `callback_failed`, but:
+
+- If user clicked "Register" button → Account exists (use login)
+- If user clicked "Login" button → Account doesn't exist (use register)
 
 ---
 
@@ -1077,6 +1144,143 @@ if (response.status === 401) {
   // Retry original request with new token
 }
 ```
+
+---
+
+## Critical Implementation Guidance
+
+### Frontend Flow Decision Logic
+
+**User clicks "Sign in with Google":**
+
+```
+Does user have existing account?
+├── YES → Use Login flow: POST /oauth/login/init
+└── NO → Use Register flow: POST /oauth/register/init
+```
+
+**Handling Errors:**
+
+- **Login flow returns 404/error:** User doesn't have account → Ask user to register
+- **Register flow returns 409:** Account exists → Ask user to login instead
+
+### Important Security & Design Notes
+
+**1. OAuth-Only Accounts Have No Password**
+
+When user registers via OAuth:
+
+- `passwordHash` is `null` in database
+- User **cannot** login with email/password
+- User **must** use OAuth to authenticate
+- If user tries to login with email/password → Error: "This account uses Google login"
+
+**2. Role is Permanent After Registration**
+
+- Role assigned during `/oauth/register/init` is **NOT changeable** via OAuth
+- User is locked into STUDENT/MENTOR/EMPLOYER role forever
+- Role change must be done by:
+  - User editing profile (if allowed by frontend)
+  - Admin dashboard (if admin endpoint exists)
+- **Frontend responsibility:** Ensure role selection UI is clear and user understands choice is permanent
+
+**3. Password Reset Does NOT Logout Other Devices**
+
+- When user resets password → Active sessions remain valid
+- User retains access for up to 7 days (until refresh token expires)
+- **Security gap:** If account compromised and password reset, hacker keeps access
+- **Mitigation:** Frontend should show warning to logout other devices manually
+
+**4. Email/Password vs OAuth Account Conflict**
+
+- User registers with email/password → Gets account
+- Same email used to login with Google (in Login flow)
+- Backend **automatically links** Google to that email account
+- User now has both password-based and OAuth access
+- **This is intentional and safe** (email verified at both places)
+
+**5. Provider ID Uniqueness**
+
+- Same Google ID cannot have multiple Codionix accounts
+- Same GitHub ID cannot have multiple Codionix accounts
+- But same email CAN have multiple OAuth provider IDs (Google + GitHub)
+- **Example:** alice@example.com → {googleId: '123', githubId: '456'}
+
+**6. Email Changes at Provider**
+
+- If user changes email at Google, then logs into Codionix
+- Codionix will update email in database to new one
+- No duplicate email issues (email is globally unique in Codionix)
+
+### Common Mistakes & How to Avoid
+
+**❌ Mistake 1: Using Login flow for new users**
+
+- User tries to login without account
+- Redirected to error page
+- User confused about what to do next
+
+**✓ Solution:**
+
+- Frontend detects if user has account (from UI state or localStorage)
+- Show appropriate button (Login vs Register)
+- Or show both buttons side-by-side
+
+**❌ Mistake 2: Ignoring role selection in Register flow**
+
+- User registers as STUDENT
+- User wants to change to MENTOR later
+- Not possible via OAuth (role is permanent)
+- User feels trapped
+
+**✓ Solution:**
+
+- Clear UI that role selection is permanent
+- Explain role differences before selection
+- If really needed, implement admin dashboard role change (external to OAuth)
+
+**❌ Mistake 3: Storing tokens in localStorage**
+
+- Tokens in localStorage vulnerable to XSS attacks
+- Attacker steals token and has access
+
+**✓ Solution:**
+
+- Access token: Memory (sessionStorage at worst)
+- Refresh token: SessionStorage (cleared on browser close)
+- Or use httpOnly cookies (requires backend support)
+
+**❌ Mistake 4: Not clearing URL hash after token extraction**
+
+```javascript
+// BAD: URL still contains tokens
+// User bookmarks page → Tokens now in browser history
+console.log(window.location.hash); // Contains tokens
+
+// GOOD: Clear URL after extraction
+history.replaceState(null, "", window.location.pathname);
+```
+
+**✓ Solution:**
+
+- Extract tokens immediately
+- Clear URL fragment with `history.replaceState()`
+- Ensure tokens never visible in browser history
+
+### OAuth Flows Recap
+
+| Aspect            | Login Flow                                                       | Register Flow               |
+| ----------------- | ---------------------------------------------------------------- | --------------------------- |
+| **Endpoint Init** | `POST /oauth/login/init`                                         | `POST /oauth/register/init` |
+| **Use Case**      | Existing users                                                   | New users                   |
+| **Role Needed**   | No                                                               | Yes (mandatory)             |
+| **Callback URL**  | `/api/v1/auth/google/callback` OR `/api/v1/auth/github/callback` | Same                        |
+| **Account Check** | Must exist                                                       | Must NOT exist              |
+| **Success**       | Existing account authenticated                                   | New account created         |
+| **Linking**       | Automatic (if email match)                                       | Never                       |
+| **Result**        | Tokens in URL fragment                                           | Tokens in URL fragment      |
+
+---
 
 ### OAuth Integration
 

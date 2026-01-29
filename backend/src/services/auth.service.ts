@@ -426,8 +426,8 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
     const payload = verifyRefreshToken(token);
 
     const result = await prisma.$transaction(async (tx) => {
-      // Lock the row for update
-      const storedToken = await prisma.refreshToken.findUnique({
+      // Lock the row for update using transaction-scoped client
+      const storedToken = await tx.refreshToken.findUnique({
         where: { token },
       });
 
@@ -472,7 +472,7 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
 
       const newTokens = generateTokenPair(tokenPayload);
 
-      // Revoke the old token
+      // Revoke the old token and create a new one in the same transaction
       await tx.refreshToken.update({
         where: { token },
         data: { isRevoked: true },

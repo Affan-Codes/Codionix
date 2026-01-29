@@ -67,9 +67,9 @@ const authLimiter = rateLimit({
 
 /**
  * Mount OAuth routes
- * Includes: /oauth/init, /google/callback, /github/callback
+ * Includes: /login/init, /register/init, /google/callback, /github/callback
  */
-router.use('/oauth', oauthRoutes);
+router.use(oauthRoutes);
 
 // ===================================
 // PUBLIC ROUTES

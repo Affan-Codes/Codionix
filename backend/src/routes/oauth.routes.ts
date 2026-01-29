@@ -58,7 +58,7 @@ const oauthCallbackLimiter = rateLimit({
  * @access  Public
  */
 router.post(
-  '/login/init',
+  '/oauth/login/init',
   oauthInitLimiter,
   validateBody(oauthLoginInitSchema),
   oauthController.initOAuthLogin
@@ -70,7 +70,7 @@ router.post(
  * @access  Public
  */
 router.post(
-  '/register/init',
+  '/oauth/register/init',
   oauthInitLimiter,
   validateBody(oauthRegisterInitSchema),
   oauthController.initOAuthRegister
