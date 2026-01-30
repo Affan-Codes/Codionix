@@ -1,16 +1,3 @@
-/**
- * OAuth Service
- *
- * Production-grade OAuth 2.0 implementation for Google and GitHub
- *
- * SECURITY FEATURES:
- * - Server-side state storage (tamper-proof)
- * - Single-use state tokens (replay protection)
- * - 5-minute expiration (prevents stale state attacks)
- * - CSRF protection via nonce
- * - Email verification from providers
- */
-
 import { env } from '../config/env.js';
 import { prisma } from '../config/database.js';
 import { logger, trackOperation } from '../utils/logger.js';
@@ -242,6 +229,9 @@ async function handleOAuthLogin(
 ): Promise<{ user: any; tokens: TokenPair }> {
   const { provider, email, providerId } = profile;
 
+  // ========================================
+  // STEP 1: Check if OAuth provider already linked
+  // ========================================
   const existingOAuthUser = await prisma.user.findFirst({
     where:
       provider === 'google'
@@ -260,8 +250,18 @@ async function handleOAuthLogin(
   });
 
   if (existingOAuthUser) {
+    logger.info('OAuth login: User authenticated via existing provider link', {
+      userId: existingOAuthUser.id,
+      email: existingOAuthUser.email,
+      provider,
+      providerId: providerId.substring(0, 8) + '...',
+      operation: 'oauth.login',
+      flow: 'existing_oauth_user',
+    });
+
+    // Check if email changed at provider
     if (existingOAuthUser.email !== email) {
-      logger.info('OAuth email changed, updating user record', {
+      logger.info('OAuth email changed at provider, updating user record', {
         userId: existingOAuthUser.id,
         oldEmail: existingOAuthUser.email,
         newEmail: email,
@@ -289,27 +289,28 @@ async function handleOAuthLogin(
       tracker.success({
         userId: updatedUser.id,
         email: updatedUser.email,
-        flow: 'login',
-        method: 'oauth_provider',
+        flow: 'existing_oauth_user',
         emailUpdated: true,
       });
 
       return { user: updatedUser, tokens };
     }
 
-    // User authenticated via OAuth provider
+    // Email unchanged, proceed with authentication
     const tokens = await generateAndStoreTokens(existingOAuthUser);
 
     tracker.success({
       userId: existingOAuthUser.id,
       email: existingOAuthUser.email,
-      flow: 'login',
-      method: 'oauth_provider',
+      flow: 'existing_oauth_user',
     });
 
     return { user: existingOAuthUser, tokens };
   }
 
+  // ========================================
+  // STEP 2: Check if email exists (without provider linked)
+  // ========================================
   const existingEmailUser = await prisma.user.findUnique({
     where: { email },
     select: {
@@ -323,16 +324,28 @@ async function handleOAuthLogin(
       createdAt: true,
       googleId: true,
       githubId: true,
+      passwordHash: true, 
     },
   });
 
   if (existingEmailUser) {
-    // Link OAuth provider to existing account
+    logger.info('OAuth login: Linking provider to existing email account', {
+      userId: existingEmailUser.id,
+      email: existingEmailUser.email,
+      provider,
+      providerId: providerId.substring(0, 8) + '...',
+      hadPassword: !!existingEmailUser.passwordHash,
+      operation: 'oauth.login',
+      flow: 'linking_provider',
+    });
+
+    // Link the OAuth provider to the existing account
     const updatedUser = await prisma.user.update({
       where: { id: existingEmailUser.id },
       data: {
         ...(provider === 'google' && { googleId: providerId }),
         ...(provider === 'github' && { githubId: providerId }),
+        // Optionally update profile data if missing
         ...(profile.avatarUrl && !existingEmailUser.profilePictureUrl
           ? { profilePictureUrl: profile.avatarUrl }
           : {}),
@@ -352,7 +365,7 @@ async function handleOAuthLogin(
 
     const tokens = await generateAndStoreTokens(updatedUser);
 
-    logger.info('OAuth provider linked to existing account', {
+    logger.info('OAuth provider linked successfully to email account', {
       userId: updatedUser.id,
       email: updatedUser.email,
       provider,
@@ -362,17 +375,22 @@ async function handleOAuthLogin(
     tracker.success({
       userId: updatedUser.id,
       email: updatedUser.email,
-      flow: 'login',
-      method: 'link_provider',
+      flow: 'linking_provider',
+      providerLinked: provider,
     });
 
     return { user: updatedUser, tokens };
   }
 
+  // ========================================
+  // STEP 3: No existing account found
+  // ========================================
   logger.warn('OAuth login attempt for non-existent account', {
     email,
     provider,
+    providerId: providerId.substring(0, 8) + '...',
     operation: 'oauth.login',
+    outcome: 'account_not_found',
   });
 
   throw new NotFoundError(
@@ -552,16 +570,15 @@ async function exchangeCodeForToken(
       });
 
       if (!response.ok) {
-        const error = await response.text();
+        const errorText = await response.text();
         logger.error('Google token exchange failed', {
           provider,
           statusCode: response.status,
-          error,
+          error: errorText,
           operation: 'oauth.exchangeToken',
         });
-        throw new UnauthorizedError(
-          'Authentication with Google failed. Please try again or contact support.'
-        );
+
+        throw new UnauthorizedError('Failed to fetch access token from Google');
       }
 
       const rawData: unknown = await response.json();
@@ -587,16 +604,15 @@ async function exchangeCodeForToken(
       });
 
       if (!response.ok) {
-        const error = await response.text();
+        const errorText = await response.text();
         logger.error('GitHub token exchange failed', {
           provider,
           statusCode: response.status,
-          error,
+          error: errorText,
           operation: 'oauth.exchangeToken',
         });
-        throw new UnauthorizedError(
-          'Authentication with GitHub failed. Please try again or contact support.'
-        );
+
+        throw new UnauthorizedError('Failed to fetch access token from GitHub');
       }
 
       const rawData: unknown = await response.json();
@@ -614,8 +630,9 @@ async function exchangeCodeForToken(
         errors: error.issues,
         operation: 'oauth.exchangeToken',
       });
+
       throw new UnauthorizedError(
-        `Invalid response from ${provider}. Please contact support.`
+        `Failed to parse token response from ${provider}`
       );
     }
 
@@ -646,7 +663,13 @@ async function fetchUserProfile(
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch Google profile');
+        logger.error('Google profile fetch failed', {
+          provider,
+          statusCode: response.status,
+          operation: 'oauth.fetchProfile',
+        });
+
+        throw new UnauthorizedError('Failed to fetch profile from Google');
       }
 
       const rawProfile: unknown = await response.json();
@@ -679,7 +702,13 @@ async function fetchUserProfile(
       });
 
       if (!profileResponse.ok) {
-        throw new Error('Failed to fetch GitHub profile');
+        logger.error('GitHub profile fetch failed', {
+          provider,
+          statusCode: profileResponse.status,
+          operation: 'oauth.fetchProfile',
+        });
+
+        throw new UnauthorizedError('Failed to fetch profile from GitHub');
       }
 
       const rawProfile: unknown = await profileResponse.json();
@@ -694,7 +723,13 @@ async function fetchUserProfile(
       });
 
       if (!emailResponse.ok) {
-        throw new Error('Failed to fetch GitHub emails');
+        logger.error('GitHub emails fetch failed', {
+          provider,
+          statusCode: emailResponse.status,
+          operation: 'oauth.fetchProfile',
+        });
+
+        throw new UnauthorizedError('Failed to fetch emails from GitHub');
       }
 
       const rawEmails: unknown = await emailResponse.json();
@@ -730,7 +765,10 @@ async function fetchUserProfile(
         errors: error.issues,
         operation: 'oauth.fetchProfile',
       });
-      throw new Error(`Invalid response from ${provider} profile endpoint`);
+
+      throw new UnauthorizedError(
+        `Failed to parse profile data from ${provider}`
+      );
     }
 
     tracker.failure(error, { provider });

@@ -1,11 +1,4 @@
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROUTES } from "@/constants";
@@ -14,8 +7,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { z } from "zod";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 const resetPasswordSchema = z
   .object({
@@ -49,7 +44,7 @@ export default function ResetPassword() {
     register,
     handleSubmit,
     watch,
-    formState: { errors, isSubmitting: isValidating },
+    formState: { errors, isSubmitting },
   } = useForm<ResetPasswordFormData>({
     resolver: zodResolver(resetPasswordSchema),
     mode: "onBlur",
@@ -57,16 +52,6 @@ export default function ResetPassword() {
 
   const password = watch("password");
   const confirmPassword = watch("confirmPassword");
-
-  const passwordChecks = password
-    ? {
-        length: password.length >= 8,
-        uppercase: /[A-Z]/.test(password),
-        lowercase: /[a-z]/.test(password),
-        number: /[0-9]/.test(password),
-        special: /[!@#$%^&*(),.?":{}|<>_]/.test(password),
-      }
-    : null;
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) {
@@ -78,220 +63,195 @@ export default function ResetPassword() {
       await resetPassword.handleSubmit({ token, password: data.password });
       setResetSuccess(true);
 
-      // Redirect to login after 2 seconds
+      // Auto-redirect after 2 seconds
       setTimeout(() => {
         navigate(ROUTES.LOGIN);
       }, 2000);
     } catch (error: any) {
-      // If token is invalid/expired, show error state
       if (error.response?.status === 401) {
         setInvalidToken(true);
       }
-      // Error toast already shown by mutation
     }
   };
 
-  const isLoading = isValidating || resetPassword.isPending;
+  const isLoading = isSubmitting || resetPassword.isPending;
 
-  // Invalid/Missing Token State
+  // INVALID TOKEN STATE
   if (!token || invalidToken) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader className="space-y-4">
-            <div className="flex justify-center">
-              <div className="bg-red-100 rounded-full p-4">
-                <XCircleIcon className="size-12 text-red-600" />
-              </div>
+      <AuthLayout variant="centered">
+        <div className="space-y-8 text-center">
+          {/* Error Icon */}
+          <div className="flex justify-center">
+            <div className="size-20 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+              <XCircleIcon className="size-10 text-destructive" />
             </div>
-            <CardTitle className="text-2xl font-bold">Invalid Link</CardTitle>
-            <CardDescription className="text-base">
-              This password reset link is invalid or has expired.
-            </CardDescription>
-          </CardHeader>
+          </div>
 
-          <CardContent className="space-y-4">
+          {/* Error Message */}
+          <div className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight">Invalid Link</h1>
+            <p className="text-sm text-muted-foreground">
+              This password reset link is invalid or has expired.
+            </p>
+          </div>
+
+          {/* Info */}
+          <div className="p-4 rounded-xl bg-muted/30 border border-border/50 text-left">
             <p className="text-sm text-muted-foreground">
               Password reset links expire after 1 hour for security reasons.
             </p>
-            <Button asChild className="w-full">
-              <a href={ROUTES.FORGOT_PASSWORD}>Request New Reset Link</a>
+          </div>
+
+          {/* Actions */}
+          <div className="space-y-3">
+            <Button
+              asChild
+              className="w-full h-12 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+            >
+              <Link to={ROUTES.FORGOT_PASSWORD}>Request New Reset Link</Link>
             </Button>
-            <Button asChild variant="outline" className="w-full">
-              <a href={ROUTES.LOGIN}>Back to Login</a>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full h-11 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Link to={ROUTES.LOGIN}>Back to Login</Link>
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </AuthLayout>
     );
   }
 
-  // Success State
+  // SUCCESS STATE
   if (resetSuccess) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader className="space-y-4">
-            <div className="flex justify-center">
-              <div className="bg-green-100 rounded-full p-4">
-                <CheckCircleIcon className="size-12 text-green-600" />
-              </div>
+      <AuthLayout variant="centered">
+        <div className="space-y-8 text-center">
+          {/* Success Icon */}
+          <div className="flex justify-center">
+            <div className="size-20 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+              <CheckCircleIcon className="size-10 text-green-600 dark:text-green-500" />
             </div>
-            <CardTitle className="text-2xl font-bold">
-              Password Reset Successfully!
-            </CardTitle>
-            <CardDescription className="text-base">
-              Your password has been changed. Redirecting to login...
-            </CardDescription>
-          </CardHeader>
+          </div>
 
-          <CardContent>
-            <Button asChild className="w-full">
-              <a href={ROUTES.LOGIN}>Continue to Login</a>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          {/* Success Message */}
+          <div className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight">
+              Password Reset!
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Your password has been successfully changed. Redirecting to
+              login...
+            </p>
+          </div>
+
+          {/* Manual Redirect */}
+          <Button
+            asChild
+            className="w-full h-12 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+          >
+            <Link to={ROUTES.LOGIN}>Continue to Login</Link>
+          </Button>
+        </div>
+      </AuthLayout>
     );
   }
 
+  // FORM STATE
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="font-bold text-2xl text-center">
-            Reset Password
-          </CardTitle>
-          <CardDescription className="text-center">
+    <AuthLayout variant="centered">
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="space-y-2 text-center">
+          <h1 className="text-3xl font-bold tracking-tight">Reset Password</h1>
+          <p className="text-sm text-muted-foreground">
             Create a new secure password
-          </CardDescription>
-        </CardHeader>
+          </p>
+        </div>
 
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                disabled={isLoading}
-                aria-invalid={!!errors.password}
-                {...register("password")}
-              />
-              {errors.password && (
-                <p className="text-sm text-destructive" role="alert">
-                  {errors.password.message}
-                </p>
-              )}
-              {password && passwordChecks && (
-                <div className="space-y-1 mt-2">
-                  <p className="text-xs text-muted-foreground">
-                    Password requirements:
-                  </p>
-                  <div className="grid grid-cols-2 gap-1 text-xs">
-                    <div
-                      className={
-                        passwordChecks.length
-                          ? "text-green-600"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {passwordChecks.length ? "✓" : "○"} At least 8 characters
-                    </div>
-                    <div
-                      className={
-                        passwordChecks.uppercase
-                          ? "text-green-600"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {passwordChecks.uppercase ? "✓" : "○"} Uppercase letter
-                    </div>
-                    <div
-                      className={
-                        passwordChecks.lowercase
-                          ? "text-green-600"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {passwordChecks.lowercase ? "✓" : "○"} Lowercase letter
-                    </div>
-                    <div
-                      className={
-                        passwordChecks.number
-                          ? "text-green-600"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {passwordChecks.number ? "✓" : "○"} Number
-                    </div>
-                    <div
-                      className={
-                        passwordChecks.special
-                          ? "text-green-600"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {passwordChecks.special ? "✓" : "○"} Special character
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                disabled={isLoading}
-                aria-invalid={!!errors.confirmPassword}
-                {...register("confirmPassword")}
-              />
-              {errors.confirmPassword && (
-                <p className="text-sm text-destructive" role="alert">
-                  {errors.confirmPassword.message}
-                </p>
-              )}
-              {confirmPassword && password && (
-                <p
-                  className={`text-xs ${
-                    confirmPassword === password
-                      ? "text-green-600"
-                      : "text-destructive"
-                  }`}
-                >
-                  {confirmPassword === password
-                    ? "✓ Passwords match"
-                    : "✗ Passwords do not match"}
-                </p>
-              )}
-            </div>
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2Icon className="h-4 w-4 animate-spin" />
-                  Resetting...
-                </>
-              ) : (
-                "Reset Password"
-              )}
-            </Button>
-          </form>
-
-          <div className="mt-6 text-center text-sm">
-            <a
-              href={ROUTES.LOGIN}
-              className="text-primary hover:underline font-medium"
-            >
-              Back to Login
-            </a>
+        {/* Form */}
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          {/* New Password */}
+          <div className="space-y-2">
+            <Label htmlFor="password">New Password</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              disabled={isLoading}
+              aria-invalid={!!errors.password}
+              {...register("password")}
+              className="h-11 transition-all duration-200 focus:scale-[1.01]"
+            />
+            {errors.password && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.password.message}
+              </p>
+            )}
+            {password && <PasswordStrength password={password} />}
           </div>
-        </CardContent>
-      </Card>
-    </div>
+
+          {/* Confirm Password */}
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              placeholder="••••••••"
+              disabled={isLoading}
+              aria-invalid={!!errors.confirmPassword}
+              {...register("confirmPassword")}
+              className="h-11 transition-all duration-200 focus:scale-[1.01]"
+            />
+            {errors.confirmPassword && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.confirmPassword.message}
+              </p>
+            )}
+            {confirmPassword && password && (
+              <p
+                className={`text-xs flex items-center gap-1.5 ${
+                  confirmPassword === password
+                    ? "text-green-500"
+                    : "text-destructive"
+                }`}
+              >
+                {confirmPassword === password
+                  ? "✓ Passwords match"
+                  : "✗ Passwords do not match"}
+              </p>
+            )}
+          </div>
+
+          {/* Submit */}
+          <Button
+            type="submit"
+            className="w-full h-12 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2Icon className="size-4 animate-spin" />
+                Resetting...
+              </>
+            ) : (
+              "Reset Password"
+            )}
+          </Button>
+        </form>
+
+        {/* Back to Login */}
+        <div className="text-center">
+          <Link
+            to={ROUTES.LOGIN}
+            className="text-sm text-primary font-medium hover:underline transition-colors"
+          >
+            Back to Login
+          </Link>
+        </div>
+      </div>
+    </AuthLayout>
   );
 }

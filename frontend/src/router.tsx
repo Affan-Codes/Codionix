@@ -11,26 +11,25 @@ import { lazy, Suspense } from "react";
 const Home = lazy(() => import("@/pages/Home"));
 const Login = lazy(() => import("@/pages/auth/Login"));
 const Register = lazy(() => import("@/pages/auth/Register"));
+const OAuthCallback = lazy(() => import("@/pages/auth/Oauthcallback"));
+const OAuthError = lazy(() => import("@/pages/auth/Oautherror"));
 const VerifyEmail = lazy(() => import("@/pages/auth/VerifyEmail"));
 const VerificationPending = lazy(
-  () => import("@/pages/auth/VerificationPending")
+  () => import("@/pages/auth/VerificationPending"),
 );
 const ForgotPassword = lazy(() => import("@/pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("@/pages/auth/ResetPassword"));
 const Dashboard = lazy(() => import("@/pages/dashboard/Dashboard"));
 const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
-const CreateProjectPage = lazy(
-  () => import("@/pages/projects/CreateProjectPage")
-);
-const EditProjectPage = lazy(() => import("@/pages/projects/EditProjectPage"));
+const ProjectComposer = lazy(() => import("@/pages/projects/ProjectComposer"));
 const ProjectDetailPage = lazy(
-  () => import("@/pages/projects/ProjectDetailPage")
+  () => import("@/pages/projects/ProjectDetailPage"),
 );
 const MyApplications = lazy(
-  () => import("@/pages/applications/MyApplications")
+  () => import("@/pages/applications/MyApplications"),
 );
 const ProjectApplicantsPage = lazy(
-  () => import("@/pages/projects/ProjectApplicantsPage")
+  () => import("@/pages/projects/ProjectApplicantsPage"),
 );
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const Unauthorized = lazy(() => import("@/pages/Unauthorized"));
@@ -113,6 +112,22 @@ export const router = createBrowserRouter([
           <Register />
         </LazyRoute>
       </PublicOnlyRoute>
+    ),
+  },
+  {
+    path: ROUTES.OAUTH_CALLBACK_SUCCESS,
+    element: (
+      <LazyRoute>
+        <OAuthCallback />
+      </LazyRoute>
+    ),
+  },
+  {
+    path: ROUTES.OAUTH_CALLBACK_ERROR,
+    element: (
+      <LazyRoute>
+        <OAuthError />
+      </LazyRoute>
     ),
   },
   {
@@ -216,14 +231,14 @@ export const router = createBrowserRouter([
     ),
   },
 
-  // Mentor/Employer routes (create projects)
+  // Mentor/Employer routes (unified composer)
   {
     path: ROUTES.CREATE_PROJECT,
     element: (
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
           <LazyRoute>
-            <CreateProjectPage />
+            <ProjectComposer />
           </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>
@@ -235,7 +250,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <RoleGuard allowedRoles={["MENTOR", "EMPLOYER"]}>
           <LazyRoute>
-            <EditProjectPage />
+            <ProjectComposer />
           </LazyRoute>
         </RoleGuard>
       </ProtectedRoute>

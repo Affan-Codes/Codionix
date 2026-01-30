@@ -1,8 +1,20 @@
-# Authentication API
+# Authentication API - Production Documentation
 
 **Base URL:** `https://api.codionix.com/api/v1/auth`
 
-All endpoints are public unless marked otherwise.
+**Last Updated:** January 2026  
+**API Version:** v1
+
+---
+
+## Table of Contents
+
+1. [Authentication Architecture](#authentication-architecture)
+2. [Email/Password Authentication](#emailpassword-authentication)
+3. [OAuth Authentication](#oauth-authentication)
+4. [Session Management](#session-management)
+5. [Error Handling](#error-handling)
+6. [Security Considerations](#security-considerations)
 
 ---
 
@@ -10,43 +22,52 @@ All endpoints are public unless marked otherwise.
 
 ### Token System
 
+Codionix uses a dual-token JWT system for authentication:
+
 **Access Tokens:**
 
 - **Lifespan:** 15 minutes
-- **Storage:** Client-side (memory or sessionStorage recommended)
-- **Usage:** `Authorization: Bearer {access_token}` header on protected endpoints
+- **Purpose:** API authentication
+- **Storage:** Client memory or sessionStorage (NOT localStorage)
+- **Usage:** `Authorization: Bearer {access_token}` header
 - **Payload:** `{ userId, email, role, iat, exp }`
-- **Cannot be revoked** — remains valid until expiration
+- **Revocation:** Cannot be revoked (stateless)
 
 **Refresh Tokens:**
 
 - **Lifespan:** 7 days
-- **Storage:** Database (server-side), client receives token in response
-- **Usage:** Exchange for new access token via `/refresh` endpoint
-- **Revocable:** Can be invalidated via `/logout`
-- **Single-use:** Consuming a refresh token issues a new one and revokes the old
+- **Purpose:** Obtain new access tokens
+- **Storage:** Database (server-side) + client-side reference
+- **Usage:** POST to `/refresh` endpoint
+- **Revocation:** Can be revoked via `/logout` or database
+- **Rotation:** Single-use tokens (new token issued on refresh)
 
-**Token Delivery:**
+**Token Delivery Methods:**
 
-- **Email/Password Auth:** JSON response body
-- **OAuth Auth:** URL fragment (`#access_token=...&refresh_token=...`)
-- **NOT** delivered via httpOnly cookies
-- Frontend responsible for secure storage
+| Auth Method    | Delivery                                             | Security                                          |
+| -------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| Email/Password | JSON response body                                   | HTTPS only                                        |
+| OAuth          | URL fragment (`#access_token=...&refresh_token=...`) | Not sent to server, requires immediate extraction |
 
 ### Rate Limiting
 
-| Endpoint Group                                               | Limit        | Window | Tracking                        |
-| ------------------------------------------------------------ | ------------ | ------ | ------------------------------- |
-| `/register`, `/login`, `/forgot-password`, `/reset-password` | 10 requests  | 15 min | Per IP                          |
-| `/verify-email`, `/resend-verification`                      | 3 requests   | 15 min | Per IP                          |
-| OAuth init (`/oauth/*/init`)                                 | 10 requests  | 15 min | Per IP                          |
-| OAuth callbacks                                              | 20 requests  | 15 min | Per IP (skipped if valid state) |
-| All other auth endpoints                                     | 200 requests | 15 min | Per IP                          |
+All auth endpoints have strict rate limiting to prevent abuse:
 
-**Sliding Window Behavior:**
+| Endpoint Group                          | Limit       | Window | Scope  |
+| --------------------------------------- | ----------- | ------ | ------ |
+| `/register`, `/login`                   | 10 requests | 15 min | Per IP |
+| `/verify-email`, `/resend-verification` | 3 requests  | 15 min | Per IP |
+| `/forgot-password`, `/reset-password`   | 10 requests | 15 min | Per IP |
+| OAuth init (`/oauth/*/init`)            | 10 requests | 15 min | Per IP |
+| OAuth callbacks                         | 20 requests | 15 min | Per IP |
 
-- Timer resets individually per request, not at fixed intervals
-- Example: Request at 00:00 expires at 00:15, not at next 15-min block
+**Rate Limit Headers:**
+
+```
+RateLimit-Limit: 10
+RateLimit-Remaining: 7
+RateLimit-Reset: 1706094900
+```
 
 **Rate Limit Exceeded (429):**
 
@@ -55,30 +76,24 @@ All endpoints are public unless marked otherwise.
   "success": false,
   "error": {
     "code": "RATE_LIMIT_EXCEEDED",
-    "message": "Too many authentication attempts. Please try again in 15 minutes."
+    "message": "Too many attempts. Try again in 15 minutes.",
+    "errorId": "uuid",
+    "correlationId": "req_xyz"
   }
 }
-```
-
-**Response Headers:**
-
-```
-RateLimit-Limit: 10
-RateLimit-Remaining: 7
-RateLimit-Reset: 1706094900
 ```
 
 ---
 
 ## Email/Password Authentication
 
-### Register
+### 1. Register
 
 **`POST /register`**
 
-Create new user account. Sends email verification.
+Create a new user account and send email verification.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -91,12 +106,12 @@ Create new user account. Sends email verification.
 
 **Field Validation:**
 
-| Field      | Constraints                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------- | ------ |
-| `email`    | Valid email format, unique in database                                                   |
-| `password` | Min 8 chars, ≥1 uppercase, ≥1 lowercase, ≥1 number, ≥1 special char (`!@#$%^&\*(),.?":{} | <>\_`) |
-| `fullName` | 2-100 characters, trimmed                                                                |
-| `role`     | `STUDENT`, `MENTOR`, or `EMPLOYER` (ADMIN not allowed)                                   |
+| Field      | Rules                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------- | ------ |
+| `email`    | Valid email format, unique in system                                                  |
+| `password` | ≥8 chars, ≥1 uppercase, ≥1 lowercase, ≥1 number, ≥1 special char (`!@#$%^&\*(),.?":{} | <>\_`) |
+| `fullName` | 2-100 characters, trimmed                                                             |
+| `role`     | `STUDENT`, `MENTOR`, or `EMPLOYER` (ADMIN not allowed via API)                        |
 
 **Success Response (201 Created):**
 
@@ -125,13 +140,13 @@ Create new user account. Sends email verification.
 
 1. User created with `isEmailVerified: false`
 2. Email verification token generated (24-hour expiry)
-3. Verification email queued (asynchronous, non-blocking)
+3. Verification email queued asynchronously
 4. Refresh token stored in database
-5. User can use API immediately (email verification NOT required for access)
+5. **User can access API immediately** (verification NOT required for authentication)
 
 **Error Responses:**
 
-**409 Conflict — Email Exists:**
+**409 Conflict - Email Exists:**
 
 ```json
 {
@@ -155,10 +170,6 @@ Create new user account. Sends email verification.
       {
         "field": "password",
         "message": "Password must contain at least one uppercase letter"
-      },
-      {
-        "field": "email",
-        "message": "Invalid email format"
       }
     ]
   }
@@ -167,13 +178,13 @@ Create new user account. Sends email verification.
 
 ---
 
-### Login
+### 2. Login
 
 **`POST /login`**
 
-Authenticate existing user with email and password.
+Authenticate with email and password.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -194,7 +205,7 @@ Authenticate existing user with email and password.
       "fullName": "John Doe",
       "role": "STUDENT",
       "isEmailVerified": true,
-      "profilePictureUrl": "https://res.cloudinary.com/codionix/...",
+      "profilePictureUrl": "https://res.cloudinary.com/...",
       "createdAt": "2026-01-20T10:30:00.000Z"
     },
     "tokens": {
@@ -207,7 +218,7 @@ Authenticate existing user with email and password.
 
 **Error Responses:**
 
-**401 Unauthorized — Invalid Credentials:**
+**401 Unauthorized - Invalid Credentials:**
 
 ```json
 {
@@ -219,9 +230,9 @@ Authenticate existing user with email and password.
 }
 ```
 
-**Security Note:** Response is identical whether email doesn't exist or password is wrong (prevents email enumeration).
+> **Security Note:** Response is identical whether email doesn't exist or password is wrong (prevents email enumeration).
 
-**401 Unauthorized — OAuth-Only Account:**
+**401 Unauthorized - OAuth-Only Account:**
 
 ```json
 {
@@ -236,18 +247,18 @@ Authenticate existing user with email and password.
 **When This Occurs:**
 
 - User registered via OAuth (Google or GitHub)
-- Account has no password set (`passwordHash` is `null`)
-- User must use OAuth flow to authenticate
+- Account has no password (`passwordHash` is `null`)
+- User must use OAuth to authenticate
 
 ---
 
-### Verify Email
+### 3. Email Verification
 
 **`POST /verify-email`**
 
 Verify email address using token from verification email.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -272,11 +283,11 @@ Verify email address using token from verification email.
 1. `isEmailVerified` set to `true`
 2. `emailVerifiedAt` timestamp recorded
 3. Verification token cleared (single-use)
-4. Welcome email queued (sent immediately after verification)
+4. Welcome email queued
 
 **Error Responses:**
 
-**401 Unauthorized — Invalid/Expired Token:**
+**401 Unauthorized - Invalid/Expired Token:**
 
 ```json
 {
@@ -288,13 +299,7 @@ Verify email address using token from verification email.
 }
 ```
 
-**Causes:**
-
-- Token doesn't exist in database
-- Token expired (>24 hours old)
-- Token already used (cleared after first verification)
-
-**400 Validation Error — Already Verified:**
+**400 Validation Error - Already Verified:**
 
 ```json
 {
@@ -308,13 +313,13 @@ Verify email address using token from verification email.
 
 ---
 
-### Resend Verification Email
+### 4. Resend Verification Email
 
 **`POST /resend-verification`**
 
-Request new verification email.
+Request a new verification email.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -333,7 +338,7 @@ Request new verification email.
 }
 ```
 
-**Security:** Response does NOT reveal whether email exists in database.
+> **Security Note:** Response does NOT reveal whether email exists in database.
 
 **Side Effects (if email exists AND unverified):**
 
@@ -342,27 +347,15 @@ Request new verification email.
 3. New verification email queued
 4. 24-hour expiry set
 
-**Behavior if email already verified:**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Email already verified"
-  }
-}
-```
-
 ---
 
-### Refresh Access Token
+### 5. Refresh Access Token
 
 **`POST /refresh`**
 
 Exchange refresh token for new access token.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -382,22 +375,22 @@ Exchange refresh token for new access token.
 }
 ```
 
-**CRITICAL BEHAVIOR:**
+**CRITICAL BEHAVIOR - Token Rotation:**
 
-- Old refresh token is **revoked** (marked `isRevoked: true` in database)
-- New refresh token is **generated and returned**
-- Both tokens returned in response (access + refresh)
-- Frontend MUST replace old refresh token with new one
+1. Old refresh token is **revoked** (`isRevoked: true` in database)
+2. New refresh token is **generated and returned**
+3. Both tokens (access + refresh) returned in response
+4. **Frontend MUST replace old refresh token with new one**
 
-**Token Rotation Security:**
+**Security Mechanism:**
 
 - Prevents refresh token reuse
-- If same refresh token used twice → both sessions invalidated
-- Forces clients to maintain single active session per token
+- If same token used twice → both sessions invalidated
+- Forces single active session per token
 
 **Error Responses:**
 
-**401 Unauthorized — Invalid Token:**
+**401 Unauthorized - Invalid Token:**
 
 ```json
 {
@@ -412,19 +405,19 @@ Exchange refresh token for new access token.
 **Causes:**
 
 - Token not found in database
-- Token already revoked (`isRevoked: true`)
+- Token already revoked
 - Token expired (>7 days old)
-- User deleted from database
+- User deleted
 
 ---
 
-### Logout
+### 6. Logout
 
 **`POST /logout`**
 
-Revoke refresh token.
+Revoke refresh token to end session.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -445,63 +438,25 @@ Revoke refresh token.
 
 **Side Effects:**
 
-1. Refresh token marked as `isRevoked: true` in database
-2. Token can no longer be used to get new access tokens
+1. Refresh token marked as `isRevoked: true`
+2. Token can no longer generate new access tokens
 
 **CRITICAL LIMITATION:**
 
 - Access token **remains valid** until expiration (max 15 minutes)
 - Backend cannot revoke access tokens (stateless JWTs)
 - Client MUST discard access token immediately
-- For multi-device logout, client must call `/logout` for each session's refresh token
-
-**Security Implication:**
-If attacker steals access token before logout, they have up to 15 minutes of access.
+- Attacker with stolen access token has ≤15 minutes of access
 
 ---
 
-### Get Current User
-
-**`GET /me`**
-
-Get authenticated user's basic profile.
-
-**Authentication:** Required (access token)
-
-**Success Response (200 OK):**
-
-```json
-{
-  "success": true,
-  "data": {
-    "userId": "550e8400-e29b-41d4-a716-446655440000",
-    "email": "student@example.com",
-    "role": "STUDENT"
-  }
-}
-```
-
-**Error Response (401):**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "No token provided"
-  }
-}
-```
-
----
-
-### Forgot Password
+### 7. Password Reset
 
 **`POST /forgot-password`**
 
 Request password reset email.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -520,29 +475,21 @@ Request password reset email.
 }
 ```
 
-**Security:** Response does NOT reveal whether email exists.
+> **Security Note:** Response does NOT reveal whether email exists.
 
 **Side Effects (if email exists):**
 
-1. Reset token generated (cryptographically random, 64 chars)
-2. Reset token expiry set (1 hour from now)
+1. Reset token generated (64-char hex)
+2. Reset expiry set (1 hour)
 3. Password reset email queued
 
-**Token Security:**
-
-- Single-use (cleared after successful password reset)
-- 1-hour expiration
-- Stored hashed in database
-
 ---
-
-### Reset Password
 
 **`POST /reset-password`**
 
 Reset password using token from email.
 
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -550,8 +497,6 @@ Reset password using token from email.
   "password": "NewSecurePass456!"
 }
 ```
-
-**Password Validation:** Same rules as registration.
 
 **Success Response (200 OK):**
 
@@ -576,22 +521,25 @@ Reset password using token from email.
 - If account compromised, attacker's sessions remain valid
 - User MUST manually logout all sessions
 
-**To Force Re-Login Everywhere:**
+---
 
-1. Reset password via this endpoint
-2. Call `/logout` for each active refresh token (if known)
-3. OR: Admin must manually revoke all refresh tokens in database
+### 8. Get Current User
 
-**Error Responses:**
+**`GET /me`**
 
-**401 Unauthorized — Invalid/Expired Token:**
+Get authenticated user's basic profile.
+
+**Authentication:** Required (access token)
+
+**Success Response (200 OK):**
 
 ```json
 {
-  "success": false,
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Invalid or expired reset token"
+  "success": true,
+  "data": {
+    "userId": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "student@example.com",
+    "role": "STUDENT"
   }
 }
 ```
@@ -600,57 +548,56 @@ Reset password using token from email.
 
 ## OAuth Authentication
 
-### OAuth Providers
-
-**Supported:** Google, GitHub
-
-**Provider Configuration:**
+### Supported Providers
 
 | Provider | Callback URL                                | Required Scopes                      | Email Verification       |
 | -------- | ------------------------------------------- | ------------------------------------ | ------------------------ |
 | Google   | `{BACKEND_URL}/api/v1/auth/google/callback` | `userinfo.email`, `userinfo.profile` | Required                 |
 | GitHub   | `{BACKEND_URL}/api/v1/auth/github/callback` | `user:email`, `read:user`            | Required (primary email) |
 
-**Example Production Callback URLs:**
-
-- Google: `https://api.codionix.com/api/v1/auth/google/callback`
-- GitHub: `https://api.codionix.com/api/v1/auth/github/callback`
-
-**Email Verification Requirement:**
+**Email Verification Enforcement:**
 
 - **Google:** User's email must be verified at Google
 - **GitHub:** User's primary email must be verified at GitHub
-- If email not verified at provider → OAuth flow fails with 401
+- If email not verified → OAuth flow fails with error
 
-### OAuth Flows
+---
 
-**Two Separate Flows:**
+### OAuth Flow Types
 
-1. **LOGIN Flow** (`/oauth/login/init`)
-   - For existing users ONLY
-   - Authenticates via OAuth provider
-   - Links provider to existing account if not already linked
-   - Uses account's existing role
-   - Fails if account doesn't exist
+Codionix has **TWO DISTINCT** OAuth flows:
 
-2. **REGISTER Flow** (`/oauth/register/init`)
-   - For new users ONLY
-   - Creates account with provider
-   - Requires role selection (STUDENT, MENTOR, or EMPLOYER)
-   - Fails if account already exists
+#### 1. LOGIN Flow
 
-**CRITICAL DISTINCTION:**
+**Endpoint:** `POST /oauth/login/init`  
+**Purpose:** Authenticate existing users OR link provider to existing account
 
-- Role is assigned ONLY during REGISTER flow
-- LOGIN flow uses existing account's role
-- Frontend MUST use correct flow based on whether user has account
+**Behavior:**
 
-### State Management
+- **If OAuth provider already linked** → Authenticate with existing account
+- **If email exists (no provider linked)** → **AUTOMATICALLY LINK** provider + authenticate
+- **If neither exists** → Error (must register first)
+
+**Key Feature:** Automatic provider linking to email-based accounts
+
+#### 2. REGISTER Flow
+
+**Endpoint:** `POST /oauth/register/init`  
+**Purpose:** Create new user accounts
+
+**Behavior:**
+
+- **If email OR provider exists** → Error (must login instead)
+- **If neither exists** → Create new user with selected role
+- **Role selection is PERMANENT** (assigned during registration)
+
+---
+
+### OAuth State Management
 
 **Server-Side State Storage:**
 
 - State tokens stored in-memory (single-instance deployment)
-- NOT sent to client (prevents tampering)
 - 5-minute expiration
 - Single-use (consumed on callback)
 - CSRF protection via nonce
@@ -661,7 +608,7 @@ Reset password using token from email.
 {
   provider: 'google' | 'github',
   flow: 'login' | 'register',
-  role?: 'STUDENT' | 'MENTOR' | 'EMPLOYER', // Only for register flow
+  role?: 'STUDENT' | 'MENTOR' | 'EMPLOYER', // Only for register
   nonce: string, // Random 32-char hex
   createdAt: number,
   expiresAt: number
@@ -670,17 +617,13 @@ Reset password using token from email.
 
 ---
 
-### OAuth Login Flow
+### OAuth Login Flow (Existing Users)
 
-**Important:** Login flow is for **existing users only**. New users must use the Register flow.
-
-**Step 1: Initialize OAuth Login**
+**Step 1: Initialize Login**
 
 **`POST /oauth/login/init`**
 
-Generate OAuth authorization URL for login.
-
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -708,18 +651,11 @@ Generate OAuth authorization URL for login.
 
 1. Redirect user to `authUrl`
 2. User authorizes at provider
-3. Provider redirects to backend callback URL
-
-**State Token:**
-
-- Generated server-side
-- Embedded in `authUrl` as `state` parameter
-- 5-minute expiration
-- Contains: `{ provider: 'google', flow: 'login', nonce, timestamps }`
+3. Provider redirects to backend callback
 
 ---
 
-**Step 2: OAuth Callback (Backend Handles Automatically)**
+**Step 2: OAuth Callback (Automatic)**
 
 **`GET /auth/google/callback`**  
 **`GET /auth/github/callback`**
@@ -728,18 +664,61 @@ Generate OAuth authorization URL for login.
 
 - `code`: Authorization code from provider
 - `state`: State token from init
-- `error`: (optional) Error code from provider
+- `error`: (optional) Error from provider
 - `error_description`: (optional) Error description
 
 **Backend Processing:**
 
 1. Validates state token (exists, not expired, matches provider)
-2. Exchanges code for access token at provider
+2. Exchanges code for access token
 3. Fetches user profile from provider
-4. **LOGIN LOGIC (Ordered Priority):**
-   - **Step A:** Check if provider ID linked (`googleId` or `githubId`) → Authenticate user with existing account
-   - **Step B:** If provider ID not found, check if email exists → Link provider to existing account and authenticate
-   - **Step C:** If neither provider ID nor email exists → Fail with 404, user must register first
+4. **LOGIN LOGIC (Priority Order):**
+
+```
+A. Check if provider ID exists (googleId/githubId)
+   ↓ YES → Authenticate existing OAuth account
+   ↓ NO → Continue to B
+
+B. Check if email exists in system
+   ↓ YES → LINK provider to account + Authenticate
+   ↓ NO → Continue to C
+
+C. No match found
+   → Error: Account doesn't exist (must register)
+```
+
+**Account Linking Details (Step B):**
+
+When user has email-based account and logs in with OAuth:
+
+```typescript
+// Before: User registered with email/password
+{
+  email: 'user@example.com',
+  passwordHash: 'bcrypt_hash',
+  googleId: null,
+  githubId: null
+}
+
+// After: User logs in with Google
+{
+  email: 'user@example.com',
+  passwordHash: 'bcrypt_hash',
+  googleId: 'google_provider_id_123', // ← LINKED
+  githubId: null,
+  profilePictureUrl: 'https://...' // ← Updated if was null
+}
+```
+
+**Result:** User can now authenticate via:
+
+- Email + password
+- Google OAuth
+- GitHub OAuth (if later linked)
+
+---
+
+**Step 3: Success/Error Redirect**
 
 **Success Redirect:**
 
@@ -747,84 +726,51 @@ Generate OAuth authorization URL for login.
 {FRONTEND_URL}/auth/oauth/success#access_token={token}&refresh_token={token}
 ```
 
-**Account Linking Details (Step B):**
-
-When user already has account via email/password and logs in with OAuth, the provider gets linked:
-
-```typescript
-// Example: User registered with email/password, then logs in with Google
-{
-  googleId: 'google_provider_id', // Now linked
-  // Other fields unchanged
-}
-```
-
-After linking, user can authenticate using:
-
-- Email + password
-- Google OAuth
-- GitHub OAuth (if also linked)
-
 **Error Redirect:**
 
 ```
-{FRONTEND_URL}/auth/oauth/error?provider={google|github}&error={code}
+{FRONTEND_URL}/auth/oauth/error?provider={provider}&error={code}
 ```
 
 **Error Codes:**
 
-| Code                 | Cause                                                |
-| -------------------- | ---------------------------------------------------- |
-| `missing_parameters` | No code or state in callback                         |
-| `callback_failed`    | Backend processing error (check logs for details)    |
-| `access_denied`      | User denied authorization at provider                |
-| `unverified_email`   | Email not verified at provider (Google or GitHub)    |
-| (Implied 404)        | No account found - user must use REGISTER flow first |
-
-**What Happens If Account Doesn't Exist:**
-
-- User is redirected to `/auth/oauth/error?provider={provider}&error=callback_failed`
-- Error response body (if accessible): 404 Not Found - "No account exists for this email"
-- **User must use OAuth Register flow to create account**
+| Code                 | Meaning                          | User Action             |
+| -------------------- | -------------------------------- | ----------------------- |
+| `access_denied`      | User denied authorization        | Try again               |
+| `account_not_found`  | No account exists for this email | Use Register flow       |
+| `state_expired`      | OAuth state expired (>5 min)     | Start flow again        |
+| `email_not_verified` | Email not verified at provider   | Verify at Google/GitHub |
+| `invalid_request`    | Missing code or state parameters | Contact support         |
+| `internal_error`     | Backend processing error         | Contact support         |
 
 ---
 
-**Step 3: Frontend Token Extraction**
-
-**Success URL Format:**
-
-```
-https://frontend.com/auth/oauth/success#access_token=eyJ...&refresh_token=eyJ...
-```
-
-**Extraction (JavaScript):**
+**Step 4: Frontend Token Extraction**
 
 ```javascript
+// Extract tokens from URL fragment
 const hash = window.location.hash.substring(1); // Remove '#'
 const params = new URLSearchParams(hash);
 const accessToken = params.get("access_token");
 const refreshToken = params.get("refresh_token");
+
+// CRITICAL: Clear URL immediately
+window.history.replaceState(null, "", "/dashboard");
+
+// Store tokens securely
+sessionStorage.setItem("access_token", accessToken);
+sessionStorage.setItem("refresh_token", refreshToken);
 ```
-
-**Security:**
-
-- Tokens in URL fragment (not sent to server)
-- Frontend must extract and store immediately
-- Clear URL after extraction
 
 ---
 
-### OAuth Register Flow
+### OAuth Register Flow (New Users)
 
-**Important:** Register flow is for **new users only**. Existing users must use the Login flow. The role is permanently assigned during registration and cannot be changed later via OAuth.
-
-**Step 1: Initialize OAuth Register**
+**Step 1: Initialize Register**
 
 **`POST /oauth/register/init`**
 
-Generate OAuth authorization URL for registration.
-
-**Request:**
+**Request Body:**
 
 ```json
 {
@@ -850,185 +796,111 @@ Generate OAuth authorization URL for registration.
 }
 ```
 
-**State Token Contains:**
-
-```typescript
-{
-  provider: 'github',
-  flow: 'register',
-  role: 'STUDENT', // User-selected role - PERMANENT
-  nonce: '...',
-  createdAt: ...,
-  expiresAt: ...
-}
-```
-
-**CRITICAL:** Role selected here is permanent and becomes the user's account role.
+**CRITICAL:** Role selected here is **PERMANENT** and becomes the user's account role.
 
 ---
 
-**Step 2: OAuth Callback (Backend Handles Automatically)**
+**Step 2: OAuth Callback (Automatic)**
 
 **Backend Processing:**
 
 1. Validates state token
 2. Exchanges code for access token
-3. Fetches user profile from provider
-4. **REGISTER LOGIC - SAFETY CHECKS:**
-   - Check if email exists → Fail with 409 Conflict
-   - Check if provider ID already linked (`googleId` or `githubId`) → Fail with 409 Conflict
-   - If both checks pass → Create new user atomically (transaction)
+3. Fetches user profile
+4. **REGISTER LOGIC - Safety Checks:**
 
-**Account Creation Details:**
+```
+A. Check if email exists
+   ↓ YES → Error 409 (must login instead)
+   ↓ NO → Continue to B
 
-When user doesn't exist, a new account is created with:
+B. Check if provider ID exists (googleId/githubId)
+   ↓ YES → Error 409 (must login instead)
+   ↓ NO → Continue to C
 
-| Field                    | Value                              | Notes                                        |
-| ------------------------ | ---------------------------------- | -------------------------------------------- |
-| `email`                  | From OAuth provider (verified)     | Required, unique, taken from provider        |
-| `fullName`               | From OAuth provider                | Required, taken from provider profile        |
-| `role`                   | From register init request         | **PERMANENT** (STUDENT, MENTOR, or EMPLOYER) |
-| `passwordHash`           | `null`                             | OAuth-only account, no password              |
-| `googleId` OR `githubId` | Provider-specific ID               | Links account to provider                    |
-| `isEmailVerified`        | `true`                             | Trusted directly from OAuth provider         |
-| `emailVerifiedAt`        | Current timestamp                  | Set immediately                              |
-| `profilePictureUrl`      | From OAuth provider (if available) | Avatar copied to profile                     |
-| `bio`                    | From OAuth provider (if available) | Bio copied from provider                     |
-| `skills`                 | Empty array `[]`                   | User must add skills later via profile edit  |
+C. Both checks pass
+   → Create new user (atomic transaction)
+```
 
-**Transaction Guarantee:**
-
-User and refresh token created atomically - both succeed or both fail:
+**Account Creation:**
 
 ```typescript
-// Both operations happen together or not at all
-tx.user.create({ ... })
-tx.refreshToken.create({ token, expiresAt: +7 days })
+{
+  email: 'user@example.com', // From OAuth provider
+  fullName: 'John Doe', // From OAuth provider
+  role: 'STUDENT', // From register init request - PERMANENT
+  passwordHash: null, // OAuth-only account
+  googleId: 'google_123', // OR githubId
+  isEmailVerified: true, // Trusted from OAuth
+  emailVerifiedAt: new Date(),
+  profilePictureUrl: 'https://...', // From provider
+  bio: 'Developer', // From provider (if available)
+  skills: [] // Empty, user adds later
+}
 ```
 
-**Success Redirect:** Same as login flow (tokens in URL fragment)  
-**Error Redirect:** Same as login flow
+**Transaction Safety:**
 
-**Error Responses:**
+User and refresh token created atomically:
 
-**409 Conflict — Account Already Exists:**
-
+```typescript
+await tx.user.create({ ... })
+await tx.refreshToken.create({ token, expiresAt: +7 days })
+// ↑ Both succeed or both fail
 ```
-{FRONTEND_URL}/auth/oauth/error?provider=google&error=callback_failed
-```
 
-Error body (if accessible): "Account already exists. Please use login instead."
+**Success Redirect:** Same as login flow (tokens in URL fragment)
 
-**Causes:**
+**Error Codes:**
 
-- Email already registered in system
-- Provider ID already linked to another account
-
-**Action for Frontend:**
-
-User should use OAuth Login flow instead (to link the provider or authenticate with existing account).
+| Code             | Meaning                     | User Action        |
+| ---------------- | --------------------------- | ------------------ |
+| `account_exists` | Email or provider ID exists | Use Login flow     |
+| (other errors)   | Same as login flow          | Same as login flow |
 
 ---
 
-### OAuth Account Linking Summary
+### OAuth Account Linking Scenarios
 
-**Linking Mechanisms:**
+| Scenario                       | Flow Used    | Result                                                     |
+| ------------------------------ | ------------ | ---------------------------------------------------------- |
+| User has email account         | Login        | Provider linked automatically, authenticated               |
+| User has email + Google linked | GitHub Login | GitHub linked, user authenticated (now has 3 auth methods) |
+| Email already exists           | Register     | Error 409 - must use Login                                 |
+| User registered via Google     | GitHub Login | GitHub linked, authenticated                               |
+| Same Google ID exists          | Register     | Error 409 - must use Login                                 |
 
-1. **Automatic Linking on Login:**
-   - User logs in with OAuth (Login flow)
-   - If provider not linked but email exists → Provider gets linked
-   - User authenticated with existing account
+**Multi-Auth Example:**
 
-2. **Explicit Linking (Email + Password First):**
-   - User registers with email/password
-   - Later uses OAuth Login → Provider linked to email account
-   - User can now authenticate 3 ways: email/password, Google, GitHub
+User can authenticate via:
 
-3. **Cannot Link on Register:**
-   - Register flow creates new users only
-   - Fails if account exists (returns 409)
-   - No linking happens during registration
+1. Email + password (if `passwordHash` exists)
+2. Google OAuth (if `googleId` exists)
+3. GitHub OAuth (if `githubId` exists)
 
-**Account Scenario Examples:**
+**Provider ID Uniqueness:**
 
-| Scenario                               | Action                    | Result                                                |
-| -------------------------------------- | ------------------------- | ----------------------------------------------------- |
-| User has email account                 | Uses OAuth Login          | Provider linked, user authenticated                   |
-| User has email account + Google linked | Uses GitHub Login         | GitHub linked, user authenticated with 3 auth methods |
-| Email already exists                   | Uses OAuth Register       | Error 409 - must use Login flow                       |
-| User registers via Google              | Uses GitHub in Login flow | GitHub linked, user authenticated                     |
+- Same Google ID → Only ONE Codionix account
+- Same GitHub ID → Only ONE Codionix account
+- Same email → Only ONE Codionix account (but can have multiple providers)
 
 ---
 
-### Role Assignment in OAuth
+### Email Changes at Provider
 
-**Critical Behavior:**
+**What Happens:**
 
-- **Register Flow:** Role assigned by frontend during init request (`/oauth/register/init`)
-  - Role selection is **MANDATORY**
-  - Role is **PERMANENT** - cannot change via OAuth later
-  - Stored in database and used for all authorization checks
-- **Login Flow:** Role ignored
-  - User authenticates with existing account's role
-  - Role cannot be changed via OAuth
-  - Must use dedicated role update endpoint if role change needed
+If user changes email at Google/GitHub, then logs into Codionix:
 
-**To Change User Role After Registration:**
+```typescript
+// Before
+{ email: 'old@example.com', googleId: '123' }
 
-- Cannot use OAuth flows
-- Must use dedicated user/admin endpoint (outside scope of this doc)
-- Requires authentication and authorization checks
-
----
-
-### OAuth Error Handling
-
-**Provider Authorization Errors:**
-
-User cancels at provider:
-
-```
-{FRONTEND_URL}/auth/oauth/error?provider=google&error=access_denied
+// After login with Google (email changed to new@example.com)
+{ email: 'new@example.com', googleId: '123' }
 ```
 
-**Backend Processing Errors:**
-
-State expired:
-
-```
-{FRONTEND_URL}/auth/oauth/error?provider=github&error=callback_failed
-```
-
-**Email Not Verified at Provider:**
-
-OAuth flow fails during email validation:
-
-```
-{FRONTEND_URL}/auth/oauth/error?provider=google&error=unverified_email
-```
-
-Frontend should display: "Please verify your email at Google/GitHub first."
-
-**Account Already Exists (REGISTER Flow):**
-
-```
-{FRONTEND_URL}/auth/oauth/error?provider=google&error=callback_failed
-```
-
-Frontend should display: "Account already exists. Please use login instead."
-
-**Account Doesn't Exist (LOGIN Flow):**
-
-```
-{FRONTEND_URL}/auth/oauth/error?provider=github&error=callback_failed
-```
-
-Frontend should display: "No account found. Please register first."
-
-**How to Differentiate:** Both return `callback_failed`, but:
-
-- If user clicked "Register" button → Account exists (use login)
-- If user clicked "Login" button → Account doesn't exist (use register)
+**Safety:** No duplicate email issues (email is unique in database)
 
 ---
 
@@ -1036,25 +908,26 @@ Frontend should display: "No account found. Please register first."
 
 ### Password Reset Behavior
 
-**What Happens:**
+**What Changes:**
 
 - ✅ Password hash updated
 - ✅ Reset token cleared
-- ❌ Existing refresh tokens **NOT** revoked
+
+**What Does NOT Change:**
+
+- ❌ Existing refresh tokens remain valid
+- ❌ Active sessions continue working
 
 **Security Gap:**
 
-- Active sessions remain valid after password reset
-- If account compromised, attacker retains access until:
-  - Refresh tokens expire (7 days)
-  - User manually logs out each session
-  - Admin manually revokes tokens in database
+- If account compromised → attacker's sessions remain valid
+- User must manually logout all sessions
 
 **Force Logout All Sessions:**
 
 1. User resets password
-2. User must call `/logout` with each active refresh token
-3. If refresh tokens unknown, admin must manually delete from database
+2. User calls `/logout` with each active refresh token
+3. OR: Admin manually deletes refresh tokens from database
 
 ---
 
@@ -1072,22 +945,14 @@ POST /logout
 - No built-in endpoint
 - Client must track all refresh tokens
 - Call `/logout` for each token
-- OR: Admin deletes all refresh tokens for user in database
 
 ---
 
-## Error Codes
+## Error Handling
 
-| Code                  | HTTP Status | Description                 | Resolution                           |
-| --------------------- | ----------- | --------------------------- | ------------------------------------ |
-| `VALIDATION_ERROR`    | 400         | Invalid request data        | Fix request payload                  |
-| `UNAUTHORIZED`        | 401         | Missing/invalid credentials | Re-authenticate                      |
-| `CONFLICT`            | 409         | Resource already exists     | Use different email or login instead |
-| `NOT_FOUND`           | 404         | Resource not found          | Register if new user                 |
-| `RATE_LIMIT_EXCEEDED` | 429         | Too many requests           | Wait for window expiry               |
-| `INTERNAL_ERROR`      | 500         | Server error                | Contact support with `errorId`       |
+### Standard Error Response
 
-**All errors include:**
+All errors follow this format:
 
 ```json
 {
@@ -1095,44 +960,55 @@ POST /logout
   "error": {
     "code": "ERROR_CODE",
     "message": "Human-readable message",
-    "errorId": "a1b2c3d4-...", // For support
-    "correlationId": "req_xyz789" // For debugging
+    "errorId": "a1b2c3d4-...",
+    "correlationId": "req_xyz789",
+    "details": [] // Optional, for validation errors
   }
 }
 ```
 
+### Error Codes
+
+| Code                  | HTTP | Description                 | Resolution                     |
+| --------------------- | ---- | --------------------------- | ------------------------------ |
+| `VALIDATION_ERROR`    | 400  | Invalid request data        | Fix request payload            |
+| `UNAUTHORIZED`        | 401  | Missing/invalid credentials | Re-authenticate                |
+| `FORBIDDEN`           | 403  | Insufficient permissions    | Check user role                |
+| `NOT_FOUND`           | 404  | Resource not found          | Register if new user           |
+| `CONFLICT`            | 409  | Resource already exists     | Use login instead of register  |
+| `RATE_LIMIT_EXCEEDED` | 429  | Too many requests           | Wait for window expiry         |
+| `INTERNAL_ERROR`      | 500  | Server error                | Contact support with `errorId` |
+
 ---
 
-## Frontend Integration Guide
+## Security Considerations
 
-### Recommended Token Storage
+### Token Storage Best Practices
 
 **Access Token:**
 
-- Store in memory (variable/state)
-- OR: sessionStorage (cleared on tab close)
-- AVOID: localStorage (XSS risk)
+- ✅ Store in memory (React state)
+- ✅ OR sessionStorage (cleared on tab close)
+- ❌ NEVER localStorage (XSS vulnerability)
 
 **Refresh Token:**
 
-- Store in memory or sessionStorage
-- OR: httpOnly cookie (requires backend changes)
+- ✅ Store in memory or sessionStorage
+- ✅ OR httpOnly cookie (requires backend changes)
+- ❌ NEVER localStorage (XSS vulnerability)
 
 ### Token Refresh Strategy
 
-**Proactive Refresh:**
+**Proactive Refresh (Recommended):**
 
 ```javascript
-// Refresh token 1 minute before expiry
+// Refresh 1 minute before expiry
 setTimeout(
   () => {
-    fetch("/api/v1/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken }),
-    });
+    refreshAccessToken();
   },
   14 * 60 * 1000,
-); // 14 minutes (1 min before expiry)
+); // 14 minutes
 ```
 
 **Reactive Refresh:**
@@ -1145,224 +1021,65 @@ if (response.status === 401) {
 }
 ```
 
----
+### OAuth Security Notes
 
-## Critical Implementation Guidance
+**URL Fragment Security:**
 
-### Frontend Flow Decision Logic
+- Tokens in URL fragment (after `#`)
+- Fragment NOT sent to server, NOT logged
+- Frontend MUST extract and clear immediately
+- Use `history.replaceState()` to clear URL
 
-**User clicks "Sign in with Google":**
+**State Token Security:**
 
-```
-Does user have existing account?
-├── YES → Use Login flow: POST /oauth/login/init
-└── NO → Use Register flow: POST /oauth/register/init
-```
+- Server-side storage (tamper-proof)
+- 5-minute expiration
+- Single-use consumption
+- CSRF protection via nonce
 
-**Handling Errors:**
+### Common Security Pitfalls
 
-- **Login flow returns 404/error:** User doesn't have account → Ask user to register
-- **Register flow returns 409:** Account exists → Ask user to login instead
+**❌ Storing tokens in localStorage:**
 
-### Important Security & Design Notes
+- Vulnerable to XSS attacks
+- Attacker can steal tokens via malicious scripts
 
-**1. OAuth-Only Accounts Have No Password**
+**❌ Not clearing URL after OAuth:**
 
-When user registers via OAuth:
+- Tokens visible in browser history
+- User can accidentally bookmark authenticated URLs
 
-- `passwordHash` is `null` in database
-- User **cannot** login with email/password
-- User **must** use OAuth to authenticate
-- If user tries to login with email/password → Error: "This account uses Google login"
+**❌ Reusing refresh tokens:**
 
-**2. Role is Permanent After Registration**
+- Token rotation prevents this
+- Same token used twice → both sessions invalidated
 
-- Role assigned during `/oauth/register/init` is **NOT changeable** via OAuth
-- User is locked into STUDENT/MENTOR/EMPLOYER role forever
-- Role change must be done by:
-  - User editing profile (if allowed by frontend)
-  - Admin dashboard (if admin endpoint exists)
-- **Frontend responsibility:** Ensure role selection UI is clear and user understands choice is permanent
+**❌ Assuming password reset logs out users:**
 
-**3. Password Reset Does NOT Logout Other Devices**
-
-- When user resets password → Active sessions remain valid
-- User retains access for up to 7 days (until refresh token expires)
-- **Security gap:** If account compromised and password reset, hacker keeps access
-- **Mitigation:** Frontend should show warning to logout other devices manually
-
-**4. Email/Password vs OAuth Account Conflict**
-
-- User registers with email/password → Gets account
-- Same email used to login with Google (in Login flow)
-- Backend **automatically links** Google to that email account
-- User now has both password-based and OAuth access
-- **This is intentional and safe** (email verified at both places)
-
-**5. Provider ID Uniqueness**
-
-- Same Google ID cannot have multiple Codionix accounts
-- Same GitHub ID cannot have multiple Codionix accounts
-- But same email CAN have multiple OAuth provider IDs (Google + GitHub)
-- **Example:** alice@example.com → {googleId: '123', githubId: '456'}
-
-**6. Email Changes at Provider**
-
-- If user changes email at Google, then logs into Codionix
-- Codionix will update email in database to new one
-- No duplicate email issues (email is globally unique in Codionix)
-
-### Common Mistakes & How to Avoid
-
-**❌ Mistake 1: Using Login flow for new users**
-
-- User tries to login without account
-- Redirected to error page
-- User confused about what to do next
-
-**✓ Solution:**
-
-- Frontend detects if user has account (from UI state or localStorage)
-- Show appropriate button (Login vs Register)
-- Or show both buttons side-by-side
-
-**❌ Mistake 2: Ignoring role selection in Register flow**
-
-- User registers as STUDENT
-- User wants to change to MENTOR later
-- Not possible via OAuth (role is permanent)
-- User feels trapped
-
-**✓ Solution:**
-
-- Clear UI that role selection is permanent
-- Explain role differences before selection
-- If really needed, implement admin dashboard role change (external to OAuth)
-
-**❌ Mistake 3: Storing tokens in localStorage**
-
-- Tokens in localStorage vulnerable to XSS attacks
-- Attacker steals token and has access
-
-**✓ Solution:**
-
-- Access token: Memory (sessionStorage at worst)
-- Refresh token: SessionStorage (cleared on browser close)
-- Or use httpOnly cookies (requires backend support)
-
-**❌ Mistake 4: Not clearing URL hash after token extraction**
-
-```javascript
-// BAD: URL still contains tokens
-// User bookmarks page → Tokens now in browser history
-console.log(window.location.hash); // Contains tokens
-
-// GOOD: Clear URL after extraction
-history.replaceState(null, "", window.location.pathname);
-```
-
-**✓ Solution:**
-
-- Extract tokens immediately
-- Clear URL fragment with `history.replaceState()`
-- Ensure tokens never visible in browser history
-
-### OAuth Flows Recap
-
-| Aspect            | Login Flow                                                       | Register Flow               |
-| ----------------- | ---------------------------------------------------------------- | --------------------------- |
-| **Endpoint Init** | `POST /oauth/login/init`                                         | `POST /oauth/register/init` |
-| **Use Case**      | Existing users                                                   | New users                   |
-| **Role Needed**   | No                                                               | Yes (mandatory)             |
-| **Callback URL**  | `/api/v1/auth/google/callback` OR `/api/v1/auth/github/callback` | Same                        |
-| **Account Check** | Must exist                                                       | Must NOT exist              |
-| **Success**       | Existing account authenticated                                   | New account created         |
-| **Linking**       | Automatic (if email match)                                       | Never                       |
-| **Result**        | Tokens in URL fragment                                           | Tokens in URL fragment      |
+- Password reset does NOT invalidate sessions
+- User must manually logout all devices
 
 ---
 
-### OAuth Integration
-
-**Login Button Click:**
-
-```javascript
-async function handleGoogleLogin() {
-  const res = await fetch("/api/v1/auth/oauth/login/init", {
-    method: "POST",
-    body: JSON.stringify({ provider: "google" }),
-  });
-  const { authUrl } = await res.json();
-  window.location.href = authUrl; // Redirect to Google
-}
-```
-
-**Register Button Click:**
-
-```javascript
-async function handleGithubRegister(role) {
-  const res = await fetch("/api/v1/auth/oauth/register/init", {
-    method: "POST",
-    body: JSON.stringify({ provider: "github", role }),
-  });
-  const { authUrl } = await res.json();
-  window.location.href = authUrl;
-}
-```
-
-**Success Page:**
-
-```javascript
-// /auth/oauth/success
-const hash = window.location.hash.substring(1);
-const params = new URLSearchParams(hash);
-const accessToken = params.get("access_token");
-const refreshToken = params.get("refresh_token");
-
-// Store tokens
-sessionStorage.setItem("access_token", accessToken);
-sessionStorage.setItem("refresh_token", refreshToken);
-
-// Clear URL
-window.history.replaceState({}, "", "/dashboard");
-```
-
-**Error Page:**
-
-```javascript
-// /auth/oauth/error?provider=google&error=access_denied
-const params = new URLSearchParams(window.location.search);
-const provider = params.get("provider");
-const error = params.get("error");
-
-// Display error to user
-alert(`${provider} login failed: ${error}`);
-```
-
----
-
-## Common Questions
+## Common Integration Questions
 
 **Q: Can users have both email/password AND OAuth?**  
-**A:** Yes. Users can link multiple auth methods to same account (matched by email).
+**A:** Yes. Users can link multiple auth methods to the same account (matched by email).
 
 **Q: What if OAuth email changes at provider?**  
-**A:** Email automatically updated in database on next login (preserves account).
+**A:** Email automatically updated in database on next login.
 
-**Q: Can admin users be created via OAuth?**  
-**A:** No. ADMIN role must be assigned manually in database. OAuth only allows STUDENT, MENTOR, EMPLOYER.
+**Q: Can ADMIN users be created via OAuth?**  
+**A:** No. ADMIN role must be assigned manually in database.
 
-**Q: What happens if I call REGISTER flow but account exists?**  
-**A:** Backend returns 409 Conflict. Frontend should redirect to login flow.
+**Q: What happens if I use REGISTER flow but account exists?**  
+**A:** Backend returns 409 Conflict with error code `account_exists`. Use LOGIN flow instead.
 
-**Q: What happens if I call LOGIN flow but account doesn't exist?**  
-**A:** Backend returns 404 Not Found. Frontend should redirect to register flow.
+**Q: What happens if I use LOGIN flow but account doesn't exist?**  
+**A:** Backend returns 404 Not Found with error code `account_not_found`. Use REGISTER flow instead.
 
 **Q: Can I change my email?**  
 **A:** No. Email is immutable. Create new account if needed.
-
-**Q: How do I logout all devices?**  
-**A:** No built-in endpoint. Must call `/logout` for each refresh token. Admin can manually delete tokens from database.
 
 **Q: Does password reset invalidate sessions?**  
 **A:** No. Existing sessions remain valid. User must manually logout each session.
@@ -1371,7 +1088,13 @@ alert(`${provider} login failed: ${error}`);
 **A:** Not supported via API. OAuth-only accounts cannot use email/password login.
 
 **Q: What if user loses access to OAuth provider?**  
-**A:** Account cannot be recovered via API. Must contact support for manual intervention.
+**A:** Account cannot be recovered via API. Contact support for manual intervention.
 
-**Q: Are refresh tokens transferable between devices?**  
-**A:** Technically yes (just a string), but NOT recommended. Each device should have its own refresh token for security.
+**Q: How do I logout all devices?**  
+**A:** No built-in endpoint. Call `/logout` for each refresh token, or contact admin.
+
+---
+
+**Document Version:** 2.0  
+**Last Reviewed:** January 2026  
+**Maintained By:** Codionix Backend Team

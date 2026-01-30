@@ -6,6 +6,8 @@ export const ROUTES = {
   HOME: "/",
   LOGIN: "/login",
   REGISTER: "/register",
+  OAUTH_CALLBACK_SUCCESS: "/auth/oauth/success",
+  OAUTH_CALLBACK_ERROR: "/auth/oauth/error",
   VERIFY_EMAIL: "/verify-email",
   VERIFICATION_PENDING: "/verification-pending",
   FORGOT_PASSWORD: "/forgot-password",
@@ -22,7 +24,6 @@ export const ROUTES = {
 } as const;
 
 export const STORAGE_KEYS = {
-  ACCESS_TOKEN: "accessToken",
   REFRESH_TOKEN: "refreshToken",
   USER: "user",
 } as const;

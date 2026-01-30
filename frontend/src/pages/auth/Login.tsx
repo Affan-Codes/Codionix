@@ -4,17 +4,13 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ROUTES } from "@/constants";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ShieldCheckIcon, SparklesIcon } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
+import { RocketIcon, UsersIcon, TrophyIcon } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.email("Invalid email address").min(1, "Email is required"),
@@ -41,137 +37,122 @@ export default function Login() {
       await login(data);
       navigate(ROUTES.DASHBOARD);
     } catch (error) {
-      // Error already handled by mutation
+      // Error handled by mutation
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-indigo-50 via-white to-purple-50 p-4">
-      <div className="w-full max-w-md space-y-8">
-        {/* Hero Section */}
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center size-16 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 shadow-lg">
-            <SparklesIcon className="size-8 text-white" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">
-              Welcome Back
-            </h1>
-            <p className="text-muted-foreground">
-              Continue your learning journey with Codionix
-            </p>
-          </div>
+    <AuthLayout
+      variant="split"
+      brandContent={{
+        hero: "Build Real Projects",
+        subhero:
+          "Join thousands of builders turning ideas into shipped products. Learn by doing, get mentored, get hired.",
+        features: [
+          {
+            icon: <RocketIcon className="size-5 text-primary" />,
+            text: "Ship production-ready projects with guidance from industry experts",
+          },
+          {
+            icon: <UsersIcon className="size-5 text-primary" />,
+            text: "Connect with mentors who've built at top tech companies",
+          },
+          {
+            icon: <TrophyIcon className="size-5 text-primary" />,
+            text: "Build your portfolio and get hired based on what you can build",
+          },
+        ],
+      }}
+    >
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="space-y-2 text-center">
+          <h1 className="text-3xl font-bold tracking-tight">Welcome Back</h1>
+          <p className="text-sm text-muted-foreground">
+            Sign in to continue building
+          </p>
         </div>
 
-        {/* Login Card */}
-        <Card className="shadow-xl border-2">
-          <CardHeader className="space-y-1 pb-6">
-            <CardTitle className="text-2xl text-center font-semibold">
-              Sign In
-            </CardTitle>
-            <CardDescription className="text-center">
-              Enter your credentials to access your account
-            </CardDescription>
-          </CardHeader>
+        {/* OAuth */}
+        <OAuthButtons flow="login" />
 
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-              {/* Email Field */}
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">
-                  Email Address
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  disabled={isLoading}
-                  aria-invalid={!!errors.email}
-                  {...register("email")}
-                  className="h-11"
-                />
-                {errors.email && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
+        {/* Divider */}
+        <div className="relative">
+          <Separator />
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-3 text-xs text-muted-foreground">
+            or continue with email
+          </span>
+        </div>
 
-              {/* Password Field */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Password
-                  </Label>
-                  <Link
-                    to={ROUTES.FORGOT_PASSWORD}
-                    className="text-xs text-primary hover:underline font-medium"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  disabled={isLoading}
-                  aria-invalid={!!errors.password}
-                  {...register("password")}
-                  className="h-11"
-                />
-                {errors.password && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.password.message}
-                  </p>
-                )}
-              </div>
+        {/* Email/Password Form */}
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          {/* Email */}
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              disabled={isLoading}
+              aria-invalid={!!errors.email}
+              {...register("email")}
+              className="h-11 transition-all duration-200 focus:scale-[1.01]"
+            />
+            {errors.email && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.email.message}
+              </p>
+            )}
+          </div>
 
-              {/* Submit Button */}
-              <Button
-                type="submit"
-                className="w-full h-11 text-base font-medium"
-                disabled={isLoading}
-              >
-                {isLoading ? "Signing in..." : "Sign In"}
-              </Button>
-
-              {/* Trust Signal */}
-              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
-                <ShieldCheckIcon className="size-3.5" />
-                <span>Your data is secure and encrypted</span>
-              </div>
-            </form>
-
-            {/* Divider */}
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">
-                  New to Codionix?
-                </span>
-              </div>
-            </div>
-
-            {/* Register Link */}
-            <div className="text-center">
+          {/* Password */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
               <Link
-                to={ROUTES.REGISTER}
-                className="text-sm text-primary font-medium hover:underline inline-flex items-center gap-1"
+                to={ROUTES.FORGOT_PASSWORD}
+                className="text-xs text-primary hover:underline font-medium transition-colors"
               >
-                Create an account
-                <span aria-hidden="true">→</span>
+                Forgot password?
               </Link>
             </div>
-          </CardContent>
-        </Card>
+            <Input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              disabled={isLoading}
+              aria-invalid={!!errors.password}
+              {...register("password")}
+              className="h-11 transition-all duration-200 focus:scale-[1.01]"
+            />
+            {errors.password && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.password.message}
+              </p>
+            )}
+          </div>
 
-        {/* Footer Text */}
-        <p className="text-center text-xs text-muted-foreground">
-          By signing in, you agree to our Terms of Service and Privacy Policy
-        </p>
+          {/* Submit */}
+          <Button
+            type="submit"
+            className="w-full h-12 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+            disabled={isLoading}
+          >
+            {isLoading ? "Signing in..." : "Sign In"}
+          </Button>
+        </form>
+
+        {/* Register Link */}
+        <div className="text-center text-sm">
+          <span className="text-muted-foreground">Don't have an account? </span>
+          <Link
+            to={ROUTES.REGISTER}
+            className="text-primary font-semibold hover:underline transition-colors"
+          >
+            Create account →
+          </Link>
+        </div>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

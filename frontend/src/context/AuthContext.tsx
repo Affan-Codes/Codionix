@@ -1,4 +1,4 @@
-import { STORAGE_KEYS } from "@/constants";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/api/axios";
 import {
   useLogin,
   useRegister,
@@ -6,8 +6,16 @@ import {
 } from "@/hooks/mutations/useAuthMutations";
 import { useCurrentUser } from "@/hooks/queries/useQueries";
 import type { LoginCredentials, RegisterData, User } from "@/types";
+import {
+  clearAllAuthData,
+  getAccessTokenExpiry,
+  getRefreshToken,
+  hasActiveSession,
+  setCachedUser,
+  setRefreshToken,
+} from "@/utils/tokenManager";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 interface AuthContextType {
@@ -27,8 +35,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const queryClient = useQueryClient();
 
-  // Check if token exists to determine if we should fetch user
-  const hasToken = !!localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  // Proactive refresh timer ref
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Check if user has valid session (refresh token exists)
+  const hasSession = hasActiveSession();
 
   const {
     data: currentUser,
@@ -37,7 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     error,
     isFetching,
   } = useCurrentUser({
-    enabled: hasToken, // Only fetch if token exists
+    enabled: hasSession, // Only fetch if session exists
     retry: false, // Don't retry on auth errors
   });
 
@@ -45,11 +56,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const registerMutation = useRegister();
   const logoutMutation = useLogoutMutation();
 
-
   // This prevents premature redirects during deep navigation
   useEffect(() => {
     // Don't mark as initialized until we've attempted to load the user
-    if (!hasToken) {
+    if (!hasSession) {
       // No token = definitely not authenticated
       setIsInitialized(true);
       return;
@@ -59,49 +69,98 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // User fetch completed (either got user or got error)
       setIsInitialized(true);
     }
-  }, [hasToken, isQueryLoading, isFetching]);
+  }, [hasSession, isQueryLoading, isFetching]);
 
   useEffect(() => {
     if (currentUser) {
       setUser(currentUser);
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
+      setCachedUser(JSON.stringify(currentUser));
     } else if (isError) {
       // Token invalid/expired - clear everything
       setUser(null);
-      localStorage.removeItem(STORAGE_KEYS.USER);
-      localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+      clearAllAuthData();
+      clearAccessToken();
     }
   }, [currentUser, isError, error]);
+
+  // Refresh access token 1 minute before expiry
+  useEffect(() => {
+    const accessToken = getAccessToken();
+
+    if (!accessToken) {
+      // No access token - clear any existing timer
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Calculate when to refresh (14 minutes = 1 min before expiry)
+    const expiryTime = getAccessTokenExpiry(accessToken);
+    const refreshTime = expiryTime - 60 * 1000; // 1 minute before expiry
+    const now = Date.now();
+    const delay = Math.max(0, refreshTime - now);
+
+    // Clear old timer
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+
+    // Set new timer
+    refreshTimerRef.current = setTimeout(async () => {
+      const currentRefreshToken = getRefreshToken();
+      if (!currentRefreshToken) return;
+
+      try {
+        console.info("Proactive token refresh (1 min before expiry)");
+
+        const { authApi } = await import("@/api/auth.api");
+        const tokens = await authApi.refreshToken(currentRefreshToken);
+
+        // Update tokens
+        setAccessToken(tokens.accessToken);
+        setRefreshToken(tokens.refreshToken);
+
+        console.info("Proactive refresh successful");
+      } catch (error: any) {
+        console.warn(
+          "Proactive refresh failed:",
+          error.message || "Unknown error",
+        );
+      }
+    }, delay);
+
+    // Cleanup timer on unmount
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, [getAccessToken()]);
 
   const login = async (credentials: LoginCredentials) => {
     const response = await loginMutation.handleSubmit(credentials);
 
+    // Store tokens
+    setAccessToken(response.tokens.accessToken); // Memory only
+    setRefreshToken(response.tokens.refreshToken); // sessionStorage
+
+    // Update user state
     setUser(response.user);
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
-    localStorage.setItem(
-      STORAGE_KEYS.ACCESS_TOKEN,
-      response.tokens.accessToken
-    );
-    localStorage.setItem(
-      STORAGE_KEYS.REFRESH_TOKEN,
-      response.tokens.refreshToken
-    );
+    setCachedUser(JSON.stringify(response.user));
   };
 
   const register = async (data: RegisterData) => {
     const response = await registerMutation.handleSubmit(data);
 
+    // Store tokens
+    setAccessToken(response.tokens.accessToken);
+    setRefreshToken(response.tokens.refreshToken);
+
+    // Update user state
     setUser(response.user);
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
-    localStorage.setItem(
-      STORAGE_KEYS.ACCESS_TOKEN,
-      response.tokens.accessToken
-    );
-    localStorage.setItem(
-      STORAGE_KEYS.REFRESH_TOKEN,
-      response.tokens.refreshToken
-    );
+    setCachedUser(JSON.stringify(response.user));
   };
 
   const logout = async () => {
@@ -110,10 +169,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
+      clearAllAuthData(); // sessionStorage
+      clearAccessToken(); // Memory
       setUser(null);
-      localStorage.removeItem(STORAGE_KEYS.USER);
-      localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+
+      // Clear proactive refresh timer
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
 
       queryClient.clear();
     }
@@ -121,7 +185,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+    setCachedUser(JSON.stringify(updatedUser));
   };
 
   const value = {

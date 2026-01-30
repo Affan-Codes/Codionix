@@ -1,16 +1,10 @@
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { ROUTES } from "@/constants";
 import { useVerifyEmail } from "@/hooks/mutations/useAuthMutations";
 import { CheckCircleIcon, Loader2Icon, XCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { AuthLayout } from "@/components/layout/AuthLayout";
 
 type VerificationState = "verifying" | "success" | "error";
 
@@ -57,51 +51,54 @@ export default function VerifyEmail() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md text-center">
-        <CardHeader className="space-y-4">
-          <div className="flex justify-center">
-            {state === "verifying" && (
-              <div className="bg-blue-100 rounded-full p-4">
-                <Loader2Icon className="size-12 text-blue-600 animate-spin" />
-              </div>
-            )}
-            {state === "success" && (
-              <div className="bg-green-100 rounded-full p-4">
-                <CheckCircleIcon className="size-12 text-green-600" />
-              </div>
-            )}
-            {state === "error" && (
-              <div className="bg-red-100 rounded-full p-4">
-                <XCircleIcon className="size-12 text-red-600" />
-              </div>
-            )}
-          </div>
+    <AuthLayout variant="centered">
+      <div className="space-y-8 text-center">
+        {/* State Icon */}
+        <div className="flex justify-center">
+          {state === "verifying" && (
+            <div className="size-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Loader2Icon className="size-10 text-primary animate-spin" />
+            </div>
+          )}
+          {state === "success" && (
+            <div className="size-20 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+              <CheckCircleIcon className="size-10 text-green-600 dark:text-green-500" />
+            </div>
+          )}
+          {state === "error" && (
+            <div className="size-20 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+              <XCircleIcon className="size-10 text-destructive" />
+            </div>
+          )}
+        </div>
 
-          <CardTitle className="text-2xl font-bold">
+        {/* Title */}
+        <div className="space-y-3">
+          <h1 className="text-3xl font-bold tracking-tight">
             {state === "verifying" && "Verifying Your Email..."}
             {state === "success" && "Email Verified!"}
             {state === "error" && "Verification Failed"}
-          </CardTitle>
+          </h1>
+          <p className="text-sm text-muted-foreground">{message}</p>
+        </div>
 
-          <CardDescription className="text-base">{message}</CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {state !== "verifying" && (
-            <div className="space-y-3">
-              <Button onClick={handleContinue} className="w-full">
-                {state === "success" ? "Continue to Login" : "Back to Register"}
-              </Button>
-              {state === "error" && (
-                <p className="text-sm text-muted-foreground">
-                  Need help? Contact support or try registering again.
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+        {/* Actions */}
+        {state !== "verifying" && (
+          <div className="space-y-3">
+            <Button
+              onClick={handleContinue}
+              className="w-full h-12 text-base font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
+            >
+              {state === "success" ? "Continue to Login" : "Back to Register"}
+            </Button>
+            {state === "error" && (
+              <p className="text-xs text-muted-foreground">
+                Need help? Contact support or try registering again.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </AuthLayout>
   );
 }

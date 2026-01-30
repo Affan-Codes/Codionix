@@ -1,11 +1,11 @@
 import type { LoginCredentials, RegisterData } from "@/types";
 import { useMutationFactory } from "../useMutationFactory";
 import { authApi } from "@/api/auth.api";
-import { STORAGE_KEYS } from "@/constants";
 import { queryKeys } from "@/utils/queryKeys";
+import { getRefreshToken } from "@/utils/tokenManager";
 
 /**
- * Login mutation
+ * Login mutation with OAuth-specific error handling
  */
 export function useLogin() {
   return useMutationFactory({
@@ -13,6 +13,24 @@ export function useLogin() {
     successMessage: "Welcome back!",
     invalidateKeys: [queryKeys.user.current()],
     getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
+      if (
+        error?.response?.status === 401 &&
+        error?.response?.data?.error?.message?.includes("Google login")
+      ) {
+        return "This account uses Google login. Please sign in with Google.";
+      }
+
+      if (
+        error?.response?.status === 401 &&
+        error?.response?.data?.error?.message?.includes("GitHub login")
+      ) {
+        return "This account uses GitHub login. Please sign in with GitHub.";
+      }
+
       if (error?.response?.status === 401) {
         return "Invalid email or password";
       }
@@ -22,7 +40,7 @@ export function useLogin() {
 }
 
 /**
- * Register mutation
+ *  Register mutation with field-level validation error parsing
  */
 export function useRegister() {
   return useMutationFactory({
@@ -30,21 +48,44 @@ export function useRegister() {
     successMessage: "Account created successfully!",
     invalidateKeys: [queryKeys.user.current()],
     getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
       if (error?.response?.status === 409) {
         return "An account with this email already exists";
       }
+
+      if (
+        error?.response?.status === 400 &&
+        error?.response?.data?.error?.details
+      ) {
+        const details = error.response.data.error.details;
+
+        // If multiple field errors, show first one
+        if (Array.isArray(details) && details.length > 0) {
+          return details[0].message;
+        }
+      }
+
+      if (error?.response?.status === 400) {
+        return (
+          error?.response?.data?.error?.message || "Invalid registration data"
+        );
+      }
+
       return error?.response?.data?.error?.message || "Registration failed";
     },
   });
 }
 
 /**
- * Logout mutation
+ * Logout mutation with atomic cleanup
  */
 export function useLogout() {
   return useMutationFactory({
     mutationFn: () => {
-      const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      const refreshToken = getRefreshToken();
       if (!refreshToken) {
         throw new Error("No refresh token found");
       }
@@ -53,8 +94,7 @@ export function useLogout() {
 
     successMessage: "Logged out successfully",
 
-    // Clear all auth data on success
-    // This is handled in AuthContext
+    // Clear all auth data on success (handled in AuthContext)
   });
 }
 
@@ -68,9 +108,18 @@ export function useVerifyEmail() {
     successMessage: (data) => data.message || "Email verified successfully!",
 
     getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
       if (error?.response?.status === 401) {
         return "Invalid or expired verification token";
       }
+
+      if (error?.response?.status === 400) {
+        return "Email already verified";
+      }
+
       return error?.response?.data?.error?.message || "Verification failed";
     },
   });
@@ -88,6 +137,10 @@ export function useResendVerification() {
     debounceMs: 3000, // Longer debounce for email sending
 
     getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
       return (
         error?.response?.data?.error?.message ||
         "Failed to resend verification email"
@@ -108,6 +161,10 @@ export function useForgotPassword() {
     debounceMs: 3000, // Longer debounce for email sending
 
     getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
       return (
         error?.response?.data?.error?.message || "Failed to send reset email"
       );
@@ -129,7 +186,66 @@ export function useResetPassword() {
       if (error?.response?.status === 401) {
         return "Invalid or expired reset token";
       }
+
+      if (
+        error?.response?.status === 400 &&
+        error?.response?.data?.error?.details
+      ) {
+        const details = error.response.data.error.details;
+
+        if (Array.isArray(details) && details.length > 0) {
+          return details[0].message;
+        }
+      }
+
       return error?.response?.data?.error?.message || "Password reset failed";
+    },
+  });
+}
+
+/**
+ * OAuth login init mutation
+ * On success, redirects user to OAuth provider
+ */
+export function useOAuthLoginInit() {
+  return useMutationFactory({
+    mutationFn: (provider: "google" | "github") =>
+      authApi.oauthLoginInit(provider),
+    getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
+      return (
+        error?.response?.data?.error?.message ||
+        "Failed to initialize OAuth login"
+      );
+    },
+  });
+}
+
+/**
+ * OAuth register init mutation
+ * On success, redirects user to OAuth provider
+ */
+export function useOAuthRegisterInit() {
+  return useMutationFactory({
+    mutationFn: ({
+      provider,
+      role,
+    }: {
+      provider: "google" | "github";
+      role: "STUDENT" | "MENTOR" | "EMPLOYER";
+    }) => authApi.oauthRegisterInit(provider, role),
+    getErrorMessage: (error: any) => {
+      if (error?.isRateLimitError) {
+        return error.userMessage;
+      }
+
+      return (
+        error?.response?.data?.error?.message ||
+        "Failed to initialize OAuth registration"
+      );
     },
   });
 }

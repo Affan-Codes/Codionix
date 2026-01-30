@@ -11,7 +11,7 @@ export const authApi = {
   register: async (data: RegisterData): Promise<AuthResponse> => {
     const response = await apiClient.post<ApiResponse<AuthResponse>>(
       "/auth/register",
-      data
+      data,
     );
     return response.data.data!;
   },
@@ -20,14 +20,35 @@ export const authApi = {
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     const response = await apiClient.post<ApiResponse<AuthResponse>>(
       "/auth/login",
-      credentials
+      credentials,
     );
+    return response.data.data!;
+  },
+
+  // Initialize OAuth login flow
+  oauthLoginInit: async (
+    provider: "google" | "github",
+  ): Promise<{ authUrl: string; expiresIn: number }> => {
+    const response = await apiClient.post<
+      ApiResponse<{ authUrl: string; expiresIn: number }>
+    >("/auth/oauth/login/init", { provider });
+    return response.data.data!;
+  },
+
+  // Initialize OAuth registration flow
+  oauthRegisterInit: async (
+    provider: "google" | "github",
+    role: "STUDENT" | "MENTOR" | "EMPLOYER",
+  ): Promise<{ authUrl: string; expiresIn: number }> => {
+    const response = await apiClient.post<
+      ApiResponse<{ authUrl: string; expiresIn: number }>
+    >("/auth/oauth/register/init", { provider, role });
     return response.data.data!;
   },
 
   // Refresh access token
   refreshToken: async (
-    refreshToken: string
+    refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> => {
     const response = await apiClient.post<
       ApiResponse<{ accessToken: string; refreshToken: string }>
@@ -44,7 +65,7 @@ export const authApi = {
   verifyEmail: async (token: string): Promise<{ message: string }> => {
     const response = await apiClient.post<ApiResponse<{ message: string }>>(
       "/auth/verify-email",
-      { token }
+      { token },
     );
     return response.data.data!;
   },
@@ -52,7 +73,7 @@ export const authApi = {
   // Resend verification email
   resendVerificationEmail: async (): Promise<{ message: string }> => {
     const response = await apiClient.post<ApiResponse<{ message: string }>>(
-      "/auth/resend-verification"
+      "/auth/resend-verification",
     );
     return response.data.data!;
   },
@@ -61,7 +82,7 @@ export const authApi = {
   forgotPassword: async (email: string): Promise<{ message: string }> => {
     const response = await apiClient.post<ApiResponse<{ message: string }>>(
       "/auth/forgot-password",
-      { email }
+      { email },
     );
     return response.data.data!;
   },
@@ -69,11 +90,11 @@ export const authApi = {
   // Reset password with token
   resetPassword: async (
     token: string,
-    password: string
+    password: string,
   ): Promise<{ message: string }> => {
     const response = await apiClient.post<ApiResponse<{ message: string }>>(
       "/auth/reset-password",
-      { token, password }
+      { token, password },
     );
     return response.data.data!;
   },
