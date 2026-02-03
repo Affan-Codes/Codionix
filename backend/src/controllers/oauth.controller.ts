@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import type {
   OAuthLoginInitInput,
   OAuthRegisterInitInput,
+  ExchangeAuthCodeInput,
 } from '../validators/oauth.validator.js';
 import {
   ConflictError,
@@ -88,14 +89,20 @@ export const googleCallback = asyncHandler(
     }
 
     try {
-      const { tokens } = await oauthService.handleOAuthCallback(
+      const { authCode } = await oauthService.handleOAuthCallback(
         'google',
         code,
         state
       );
 
-      // Redirect to frontend with tokens
-      const successUrl = `${env.FRONTEND_URL}/auth/oauth/success#access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`;
+      // Redirect to frontend with authorization code in QUERY PARAMS
+      // Frontend will exchange this code for tokens via API call
+      const successUrl = `${env.FRONTEND_URL}/auth/oauth/callback?code=${authCode}`;
+
+      logger.info('Google OAuth callback successful, redirecting to frontend', {
+        operation: 'oauth.googleCallback',
+        redirectUrl: successUrl.split('?')[0], // Log URL without code
+      });
 
       res.redirect(successUrl);
     } catch (error) {
@@ -148,14 +155,20 @@ export const githubCallback = asyncHandler(
     }
 
     try {
-      const { tokens } = await oauthService.handleOAuthCallback(
+      const { authCode } = await oauthService.handleOAuthCallback(
         'github',
         code,
         state
       );
 
-      // Redirect to frontend with tokens
-      const successUrl = `${env.FRONTEND_URL}/auth/oauth/success#access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`;
+      // Redirect to frontend with authorization code in QUERY PARAMS
+      // Frontend will exchange this code for tokens via API call
+      const successUrl = `${env.FRONTEND_URL}/auth/oauth/callback?code=${authCode}`;
+
+      logger.info('GitHub OAuth callback successful, redirecting to frontend', {
+        operation: 'oauth.githubCallback',
+        redirectUrl: successUrl.split('?')[0], // Log URL without code
+      });
 
       res.redirect(successUrl);
     } catch (error) {
@@ -169,6 +182,31 @@ export const githubCallback = asyncHandler(
       const errorUrl = `${env.FRONTEND_URL}/auth/oauth/error?provider=github&error=${errorCode}`;
       res.redirect(errorUrl);
     }
+  }
+);
+
+/**
+ * Exchange authorization code for tokens
+ * POST /api/v1/auth/oauth/exchange
+ */
+export const exchangeAuthCode = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { code } = req.body as ExchangeAuthCodeInput;
+
+    logger.info('Authorization code exchange initiated', {
+      code: code.substring(0, 8) + '...',
+      operation: 'oauth.exchangeAuthCode',
+    });
+
+    const result = await oauthService.exchangeAuthCodeForTokens(code);
+
+    logger.info('Authorization code exchange successful', {
+      userId: result.user.id,
+      email: result.user.email,
+      operation: 'oauth.exchangeAuthCode',
+    });
+
+    ApiResponse.success(res, result);
   }
 );
 

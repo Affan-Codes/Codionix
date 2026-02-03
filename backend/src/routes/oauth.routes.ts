@@ -3,6 +3,7 @@ import * as oauthController from '../controllers/oauth.controller.js';
 import { validateBody } from '../middleware/validate.js';
 import rateLimit from 'express-rate-limit';
 import {
+  exchangeAuthCodeSchema,
   oauthLoginInitSchema,
   oauthRegisterInitSchema,
 } from '../validators/oauth.validator.js';
@@ -46,6 +47,24 @@ const oauthCallbackLimiter = rateLimit({
     // This prevents blocking users during normal flow
     return !!req.query.state && !!req.query.code;
   },
+});
+
+/**
+ * Authorization code exchange rate limiter
+ * CRITICAL: Prevent code replay attacks
+ */
+const exchangeCodeLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 50, // 5 exchange attempts per 5 minutes
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many token exchange attempts. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // ===================================
@@ -100,6 +119,17 @@ router.get(
   oauthController.githubCallback
 );
 
-export default router;
+/**
+ * @route   POST /api/v1/auth/oauth/exchange
+ * @desc    Exchange authorization code for JWT tokens
+ * @access  Public
+ * @body    { code: string }
+ */
+router.post(
+  '/oauth/exchange',
+  exchangeCodeLimiter,
+  validateBody(exchangeAuthCodeSchema),
+  oauthController.exchangeAuthCode
+);
 
-// I think there are some flaws in authentication doc, as it doesn't state what will happen a person login using oauth as there's no email registered , so it created the user and naturally the user will be stuck as student role forever. So analyze the database make changes in the services for any loop hole that will cause future problems then enhance the authentication doc by analyzing the code and comments from our codebase thoroughly with better info. So that our frontend team doesn't get hold back. Don't assume everything. Fact check it. Also don't give frontend implementation examples and all. Just state flow and what it should. Don't make the authentication doc too lengthy, only necessary things and what frontend team  can ask. Also i have this summary you can take reference from it suggest on your own by thinking through. Don't blindly follow what frontend team says. Take your time understanding it and implement what's necessary with your own critical thinking:
+export default router;

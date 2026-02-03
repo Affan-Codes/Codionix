@@ -57,9 +57,14 @@ export const oauthRegisterInitSchema = z.object({
   }),
 });
 
+export const exchangeAuthCodeSchema = z.object({
+  code: z.string().min(1, 'Authorization code is required'),
+});
+
 // Export types
 export type OAuthLoginInitInput = z.infer<typeof oauthLoginInitSchema>;
 export type OAuthRegisterInitInput = z.infer<typeof oauthRegisterInitSchema>;
+export type ExchangeAuthCodeInput = z.infer<typeof exchangeAuthCodeSchema>;
 export type OAuthTokenResponse = z.infer<typeof oauthTokenResponseSchema>;
 export type GoogleProfile = z.infer<typeof googleProfileSchema>;
 export type GitHubProfile = z.infer<typeof githubProfileSchema>;

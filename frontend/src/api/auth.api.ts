@@ -46,6 +46,15 @@ export const authApi = {
     return response.data.data!;
   },
 
+  // Exchange authorization code for tokens
+  exchangeAuthCode: async (code: string): Promise<AuthResponse> => {
+    const response = await apiClient.post<ApiResponse<AuthResponse>>(
+      "/auth/oauth/exchange",
+      { code },
+    );
+    return response.data.data!;
+  },
+
   // Refresh access token
   refreshToken: async (
     refreshToken: string,

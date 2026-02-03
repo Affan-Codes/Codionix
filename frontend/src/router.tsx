@@ -115,7 +115,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: ROUTES.OAUTH_CALLBACK_SUCCESS,
+    path: ROUTES.OAUTH_CALLBACK,
     element: (
       <LazyRoute>
         <OAuthCallback />
@@ -123,7 +123,7 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: ROUTES.OAUTH_CALLBACK_ERROR,
+    path: ROUTES.OAUTH_ERROR,
     element: (
       <LazyRoute>
         <OAuthError />

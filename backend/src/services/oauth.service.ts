@@ -32,6 +32,7 @@ import {
   githubEmailSchema,
 } from '../validators/oauth.validator.js';
 import { z } from 'zod';
+import crypto from 'crypto';
 
 // ===================================
 // OAUTH URLS
@@ -39,7 +40,7 @@ import { z } from 'zod';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_PROFILE_URL = 'https://www.googleapis.com/oauth2/v2/userinfo';
+const GOOGLE_PROFILE_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -51,11 +52,130 @@ const GITHUB_EMAIL_URL = 'https://api.github.com/user/emails';
 // ===================================
 
 const GOOGLE_SCOPES = [
+  'openid',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
 const GITHUB_SCOPES = ['user:email', 'read:user'];
+
+// ===================================
+// AUTHORIZATION CODE STORE
+// ===================================
+
+/**
+ * In-memory store for authorization codes
+ * PRODUCTION: Replace with Redis for multi-instance deployments
+ */
+interface AuthorizationCode {
+  code: string;
+  userId: string;
+  email: string;
+  role: string;
+  createdAt: number;
+  expiresAt: number;
+  used: boolean;
+}
+
+const authCodeStore = new Map<string, AuthorizationCode>();
+
+/**
+ * Generate cryptographically secure authorization code
+ */
+function generateAuthCode(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Store authorization code (expires in 5 minutes)
+ */
+function storeAuthCode(user: {
+  id: string;
+  email: string;
+  role: string;
+}): string {
+  const code = generateAuthCode();
+  const now = Date.now();
+
+  authCodeStore.set(code, {
+    code,
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    createdAt: now,
+    expiresAt: now + 5 * 60 * 1000, // 5 minutes
+    used: false,
+  });
+
+  // Auto-cleanup expired codes
+  setTimeout(
+    () => {
+      authCodeStore.delete(code);
+    },
+    5 * 60 * 1000
+  );
+
+  logger.debug('Authorization code stored', {
+    code: code.substring(0, 8) + '...',
+    userId: user.id,
+    expiresIn: '5m',
+    operation: 'oauth.storeAuthCode',
+  });
+
+  return code;
+}
+
+/**
+ * Consume authorization code (single-use)
+ */
+function consumeAuthCode(code: string): AuthorizationCode | null {
+  const authCode = authCodeStore.get(code);
+
+  if (!authCode) {
+    logger.warn('Authorization code not found', {
+      code: code.substring(0, 8) + '...',
+      operation: 'oauth.consumeAuthCode',
+    });
+    return null;
+  }
+
+  if (authCode.used) {
+    logger.warn('Authorization code already used', {
+      code: code.substring(0, 8) + '...',
+      userId: authCode.userId,
+      operation: 'oauth.consumeAuthCode',
+    });
+    authCodeStore.delete(code);
+    return null;
+  }
+
+  if (authCode.expiresAt < Date.now()) {
+    logger.warn('Authorization code expired', {
+      code: code.substring(0, 8) + '...',
+      userId: authCode.userId,
+      operation: 'oauth.consumeAuthCode',
+    });
+    authCodeStore.delete(code);
+    return null;
+  }
+
+  // Mark as used
+  authCode.used = true;
+  authCodeStore.set(code, authCode);
+
+  // Delete after 1 minute (prevent replay attacks)
+  setTimeout(() => {
+    authCodeStore.delete(code);
+  }, 60 * 1000);
+
+  logger.debug('Authorization code consumed', {
+    code: code.substring(0, 8) + '...',
+    userId: authCode.userId,
+    operation: 'oauth.consumeAuthCode',
+  });
+
+  return authCode;
+}
 
 // ===================================
 // INITIALIZATION
@@ -179,7 +299,7 @@ export async function handleOAuthCallback(
   provider: OAuthProvider,
   code: string,
   state: string
-): Promise<{ user: any; tokens: TokenPair }> {
+): Promise<{ authCode: string }> {
   const tracker = trackOperation('oauth.callback', undefined, { provider });
 
   try {
@@ -206,13 +326,112 @@ export async function handleOAuthCallback(
     const oauthProfile = await fetchUserProfile(provider, accessToken);
 
     // FLOW DISPATCH
+    let user: { id: string; email: string; role: string };
+
     if (oauthState.flow === 'login') {
-      return await handleOAuthLogin(oauthState, oauthProfile, tracker);
+      const result = await handleOAuthLogin(oauthState, oauthProfile, tracker);
+      user = {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+      };
     } else {
-      return await handleOAuthRegister(oauthState, oauthProfile, tracker);
+      const result = await handleOAuthRegister(
+        oauthState,
+        oauthProfile,
+        tracker
+      );
+      user = {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+      };
     }
+
+    // Generate authorization code (short-lived, single-use)
+    const authCode = storeAuthCode(user);
+
+    tracker.success({
+      provider,
+      userId: user.id,
+      flow: oauthState.flow,
+    });
+
+    return { authCode };
   } catch (error) {
     tracker.failure(error, { provider });
+    throw error;
+  }
+}
+
+/**
+ * Exchange authorization code for tokens
+ * FRONTEND CALLS THIS WITH THE AUTH CODE
+ */
+export async function exchangeAuthCodeForTokens(
+  authCode: string
+): Promise<{ user: any; tokens: TokenPair }> {
+  const tracker = trackOperation('oauth.exchangeAuthCode', undefined, {
+    code: authCode.substring(0, 8) + '...',
+  });
+
+  try {
+    const authCodeData = consumeAuthCode(authCode);
+
+    if (!authCodeData) {
+      throw new UnauthorizedError('Invalid or expired authorization code');
+    }
+
+    // Fetch full user from database
+    const user = await prisma.user.findUnique({
+      where: { id: authCodeData.userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        fullName: true,
+        isEmailVerified: true,
+        profilePictureUrl: true,
+        bio: true,
+        skills: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Generate JWT tokens
+    const tokenPayload: JwtPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const tokens = generateTokenPair(tokenPayload);
+
+    // Store refresh token
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: tokens.refreshToken,
+        expiresAt,
+      },
+    });
+
+    tracker.success({
+      userId: user.id,
+      email: user.email,
+    });
+
+    return { user, tokens };
+  } catch (error) {
+    tracker.failure(error);
     throw error;
   }
 }
@@ -226,12 +445,10 @@ async function handleOAuthLogin(
   _state: OAuthLoginState,
   profile: Omit<OAuthUserData, 'role'>,
   tracker: ReturnType<typeof trackOperation>
-): Promise<{ user: any; tokens: TokenPair }> {
+): Promise<{ user: any }> {
   const { provider, email, providerId } = profile;
 
-  // ========================================
-  // STEP 1: Check if OAuth provider already linked
-  // ========================================
+  // Check if OAuth provider already linked
   const existingOAuthUser = await prisma.user.findFirst({
     where:
       provider === 'google'
@@ -284,8 +501,6 @@ async function handleOAuthLogin(
         },
       });
 
-      const tokens = await generateAndStoreTokens(updatedUser);
-
       tracker.success({
         userId: updatedUser.id,
         email: updatedUser.email,
@@ -293,11 +508,8 @@ async function handleOAuthLogin(
         emailUpdated: true,
       });
 
-      return { user: updatedUser, tokens };
+      return { user: updatedUser };
     }
-
-    // Email unchanged, proceed with authentication
-    const tokens = await generateAndStoreTokens(existingOAuthUser);
 
     tracker.success({
       userId: existingOAuthUser.id,
@@ -305,12 +517,10 @@ async function handleOAuthLogin(
       flow: 'existing_oauth_user',
     });
 
-    return { user: existingOAuthUser, tokens };
+    return { user: existingOAuthUser };
   }
 
-  // ========================================
-  // STEP 2: Check if email exists (without provider linked)
-  // ========================================
+  // Check if email exists (without provider linked)
   const existingEmailUser = await prisma.user.findUnique({
     where: { email },
     select: {
@@ -324,7 +534,7 @@ async function handleOAuthLogin(
       createdAt: true,
       googleId: true,
       githubId: true,
-      passwordHash: true, 
+      passwordHash: true,
     },
   });
 
@@ -363,8 +573,6 @@ async function handleOAuthLogin(
       },
     });
 
-    const tokens = await generateAndStoreTokens(updatedUser);
-
     logger.info('OAuth provider linked successfully to email account', {
       userId: updatedUser.id,
       email: updatedUser.email,
@@ -379,12 +587,10 @@ async function handleOAuthLogin(
       providerLinked: provider,
     });
 
-    return { user: updatedUser, tokens };
+    return { user: updatedUser };
   }
 
-  // ========================================
-  // STEP 3: No existing account found
-  // ========================================
+  // No existing account found
   logger.warn('OAuth login attempt for non-existent account', {
     email,
     provider,
@@ -407,7 +613,7 @@ async function handleOAuthRegister(
   state: OAuthRegisterState,
   profile: Omit<OAuthUserData, 'role'>,
   tracker: ReturnType<typeof trackOperation>
-): Promise<{ user: any; tokens: TokenPair }> {
+): Promise<{ user: any }> {
   const { provider, email, providerId, fullName, avatarUrl, bio } = profile;
   const { role } = state;
 
@@ -454,26 +660,7 @@ async function handleOAuthRegister(
         },
       });
 
-      const tokenPayload: JwtPayload = {
-        userId: newUser.id,
-        email: newUser.email,
-        role: newUser.role,
-      };
-
-      const tokens = generateTokenPair(tokenPayload);
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      await tx.refreshToken.create({
-        data: {
-          userId: newUser.id,
-          token: tokens.refreshToken,
-          expiresAt,
-        },
-      });
-
-      return { user: newUser, tokens };
+      return { user: newUser };
     });
 
     logger.info('New user created via OAuth', {
@@ -508,36 +695,6 @@ async function handleOAuthRegister(
 
     throw error;
   }
-}
-
-/**
- * Helper: Generate JWT tokens and store refresh token
- */
-async function generateAndStoreTokens(user: {
-  id: string;
-  email: string;
-  role: string;
-}): Promise<TokenPair> {
-  const tokenPayload: JwtPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-  };
-
-  const tokens = generateTokenPair(tokenPayload);
-
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-
-  await prisma.refreshToken.create({
-    data: {
-      userId: user.id,
-      token: tokens.refreshToken,
-      expiresAt,
-    },
-  });
-
-  return tokens;
 }
 
 // ===================================
