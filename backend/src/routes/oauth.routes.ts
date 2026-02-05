@@ -3,7 +3,6 @@ import * as oauthController from '../controllers/oauth.controller.js';
 import { validateBody } from '../middleware/validate.js';
 import rateLimit from 'express-rate-limit';
 import {
-  exchangeAuthCodeSchema,
   oauthLoginInitSchema,
   oauthRegisterInitSchema,
 } from '../validators/oauth.validator.js';
@@ -43,28 +42,8 @@ const oauthCallbackLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting if state is valid (legitimate callback)
-    // This prevents blocking users during normal flow
     return !!req.query.state && !!req.query.code;
   },
-});
-
-/**
- * Authorization code exchange rate limiter
- * CRITICAL: Prevent code replay attacks
- */
-const exchangeCodeLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 50, // 5 exchange attempts per 5 minutes
-  message: {
-    success: false,
-    error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many token exchange attempts. Please try again later.',
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // ===================================
@@ -117,19 +96,6 @@ router.get(
   '/github/callback',
   oauthCallbackLimiter,
   oauthController.githubCallback
-);
-
-/**
- * @route   POST /api/v1/auth/oauth/exchange
- * @desc    Exchange authorization code for JWT tokens
- * @access  Public
- * @body    { code: string }
- */
-router.post(
-  '/oauth/exchange',
-  exchangeCodeLimiter,
-  validateBody(exchangeAuthCodeSchema),
-  oauthController.exchangeAuthCode
 );
 
 export default router;

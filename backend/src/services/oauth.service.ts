@@ -16,6 +16,8 @@ import {
   storeOAuthState,
   consumeOAuthState,
 } from '../utils/oauthStateStore.js';
+import { generatePKCEPair, verifyCodeChallenge } from '../utils/pkce.js';
+import { createTokenFamily, addTokenToFamily } from '../utils/tokenFamily.js';
 import type {
   OAuthProvider,
   OAuthInitResponse,
@@ -32,7 +34,25 @@ import {
   githubEmailSchema,
 } from '../validators/oauth.validator.js';
 import { z } from 'zod';
-import crypto from 'crypto';
+
+// ===================================
+// TYPES
+// ===================================
+
+/**
+ * OAuth user response type
+ * Matches Prisma select statements in login/register handlers
+ */
+interface OAuthUser {
+  id: string;
+  email: string;
+  role: string;
+  fullName: string;
+  isEmailVerified: boolean;
+  profilePictureUrl: string | null;
+  bio: string | null;
+  createdAt: Date;
+}
 
 // ===================================
 // OAUTH URLS
@@ -60,130 +80,11 @@ const GOOGLE_SCOPES = [
 const GITHUB_SCOPES = ['user:email', 'read:user'];
 
 // ===================================
-// AUTHORIZATION CODE STORE
-// ===================================
-
-/**
- * In-memory store for authorization codes
- * PRODUCTION: Replace with Redis for multi-instance deployments
- */
-interface AuthorizationCode {
-  code: string;
-  userId: string;
-  email: string;
-  role: string;
-  createdAt: number;
-  expiresAt: number;
-  used: boolean;
-}
-
-const authCodeStore = new Map<string, AuthorizationCode>();
-
-/**
- * Generate cryptographically secure authorization code
- */
-function generateAuthCode(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Store authorization code (expires in 5 minutes)
- */
-function storeAuthCode(user: {
-  id: string;
-  email: string;
-  role: string;
-}): string {
-  const code = generateAuthCode();
-  const now = Date.now();
-
-  authCodeStore.set(code, {
-    code,
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-    createdAt: now,
-    expiresAt: now + 5 * 60 * 1000, // 5 minutes
-    used: false,
-  });
-
-  // Auto-cleanup expired codes
-  setTimeout(
-    () => {
-      authCodeStore.delete(code);
-    },
-    5 * 60 * 1000
-  );
-
-  logger.debug('Authorization code stored', {
-    code: code.substring(0, 8) + '...',
-    userId: user.id,
-    expiresIn: '5m',
-    operation: 'oauth.storeAuthCode',
-  });
-
-  return code;
-}
-
-/**
- * Consume authorization code (single-use)
- */
-function consumeAuthCode(code: string): AuthorizationCode | null {
-  const authCode = authCodeStore.get(code);
-
-  if (!authCode) {
-    logger.warn('Authorization code not found', {
-      code: code.substring(0, 8) + '...',
-      operation: 'oauth.consumeAuthCode',
-    });
-    return null;
-  }
-
-  if (authCode.used) {
-    logger.warn('Authorization code already used', {
-      code: code.substring(0, 8) + '...',
-      userId: authCode.userId,
-      operation: 'oauth.consumeAuthCode',
-    });
-    authCodeStore.delete(code);
-    return null;
-  }
-
-  if (authCode.expiresAt < Date.now()) {
-    logger.warn('Authorization code expired', {
-      code: code.substring(0, 8) + '...',
-      userId: authCode.userId,
-      operation: 'oauth.consumeAuthCode',
-    });
-    authCodeStore.delete(code);
-    return null;
-  }
-
-  // Mark as used
-  authCode.used = true;
-  authCodeStore.set(code, authCode);
-
-  // Delete after 1 minute (prevent replay attacks)
-  setTimeout(() => {
-    authCodeStore.delete(code);
-  }, 60 * 1000);
-
-  logger.debug('Authorization code consumed', {
-    code: code.substring(0, 8) + '...',
-    userId: authCode.userId,
-    operation: 'oauth.consumeAuthCode',
-  });
-
-  return authCode;
-}
-
-// ===================================
 // INITIALIZATION
 // ===================================
 
 /**
- * Initialize OAuth LOGIN flow
- * MUST authenticate existing users ONLY
+ * Initialize OAuth LOGIN flow with PKCE
  */
 export async function initializeOAuthLogin(
   data: OAuthLoginInitRequest
@@ -199,16 +100,26 @@ export async function initializeOAuthLogin(
       throw new ValidationError('Invalid OAuth provider');
     }
 
-    const stateToken = storeOAuthState({
+    // Generate PKCE pair
+    const pkce = generatePKCEPair();
+
+    // Store state with PKCE verifier in Redis
+    const stateToken = await storeOAuthState({
       provider,
       flow: 'login',
+      codeVerifier: pkce.codeVerifier,
     });
 
-    const authUrl = buildAuthorizationUrl(provider, stateToken);
+    // Build authorization URL with PKCE challenge
+    const authUrl = buildAuthorizationUrl(
+      provider,
+      stateToken,
+      pkce.codeChallenge
+    );
 
     tracker.success({ provider, flow: 'login' });
 
-    return { authUrl, expiresIn: 300 };
+    return { authUrl, expiresIn: 600 }; // 10 minutes
   } catch (error) {
     tracker.failure(error, { provider: data.provider });
     throw error;
@@ -216,8 +127,7 @@ export async function initializeOAuthLogin(
 }
 
 /**
- * Initialize OAuth REGISTER flow
- * MUST create new users ONLY
+ * Initialize OAuth REGISTER flow with PKCE
  */
 export async function initializeOAuthRegister(
   data: OAuthRegisterInitRequest
@@ -238,17 +148,27 @@ export async function initializeOAuthRegister(
       throw new ValidationError('Invalid role');
     }
 
-    const stateToken = storeOAuthState({
+    // Generate PKCE pair
+    const pkce = generatePKCEPair();
+
+    // Store state with PKCE verifier in Redis
+    const stateToken = await storeOAuthState({
       provider,
       flow: 'register',
       role,
+      codeVerifier: pkce.codeVerifier,
     });
 
-    const authUrl = buildAuthorizationUrl(provider, stateToken);
+    // Build authorization URL with PKCE challenge
+    const authUrl = buildAuthorizationUrl(
+      provider,
+      stateToken,
+      pkce.codeChallenge
+    );
 
     tracker.success({ provider, flow: 'register', role });
 
-    return { authUrl, expiresIn: 300 };
+    return { authUrl, expiresIn: 600 };
   } catch (error) {
     tracker.failure(error, { provider: data.provider, role: data.role });
     throw error;
@@ -256,9 +176,13 @@ export async function initializeOAuthRegister(
 }
 
 /**
- * Build OAuth authorization URL
+ * Build OAuth authorization URL with PKCE
  */
-function buildAuthorizationUrl(provider: OAuthProvider, state: string): string {
+function buildAuthorizationUrl(
+  provider: OAuthProvider,
+  state: string,
+  codeChallenge: string
+): string {
   if (provider === 'google') {
     const params = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
@@ -268,6 +192,9 @@ function buildAuthorizationUrl(provider: OAuthProvider, state: string): string {
       state,
       access_type: 'online',
       prompt: 'select_account',
+      // PKCE parameters
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
     });
 
     return `${GOOGLE_AUTH_URL}?${params.toString()}`;
@@ -280,6 +207,7 @@ function buildAuthorizationUrl(provider: OAuthProvider, state: string): string {
       scope: GITHUB_SCOPES.join(' '),
       state,
       allow_signup: 'true',
+      // GitHub doesn't support PKCE yet, but we validate on our end
     });
 
     return `${GITHUB_AUTH_URL}?${params.toString()}`;
@@ -293,17 +221,18 @@ function buildAuthorizationUrl(provider: OAuthProvider, state: string): string {
 // ===================================
 
 /**
- * Handle OAuth callback
+ * Handle OAuth callback and return tokens
  */
 export async function handleOAuthCallback(
   provider: OAuthProvider,
   code: string,
   state: string
-): Promise<{ authCode: string }> {
+): Promise<{ user: OAuthUser; tokens: TokenPair }> {
   const tracker = trackOperation('oauth.callback', undefined, { provider });
 
   try {
-    const oauthState = consumeOAuthState(state);
+    // Consume state from Redis
+    const oauthState = await consumeOAuthState(state);
 
     if (!oauthState) {
       logger.warn('Invalid or expired OAuth state', {
@@ -322,34 +251,36 @@ export async function handleOAuthCallback(
       throw new UnauthorizedError('OAuth provider mismatch');
     }
 
-    const accessToken = await exchangeCodeForToken(provider, code);
+    // Extract PKCE verifier from state
+    const codeVerifier = oauthState.codeVerifier;
+
+    // Exchange code for access token (with PKCE verification)
+    const accessToken = await exchangeCodeForToken(
+      provider,
+      code,
+      codeVerifier
+    );
+
+    // Fetch user profile
     const oauthProfile = await fetchUserProfile(provider, accessToken);
 
     // FLOW DISPATCH
-    let user: { id: string; email: string; role: string };
+    let user: OAuthUser;
+    let tokens: TokenPair;
 
     if (oauthState.flow === 'login') {
       const result = await handleOAuthLogin(oauthState, oauthProfile, tracker);
-      user = {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-      };
+      user = result.user;
+      tokens = result.tokens;
     } else {
       const result = await handleOAuthRegister(
         oauthState,
         oauthProfile,
         tracker
       );
-      user = {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-      };
+      user = result.user;
+      tokens = result.tokens;
     }
-
-    // Generate authorization code (short-lived, single-use)
-    const authCode = storeAuthCode(user);
 
     tracker.success({
       provider,
@@ -357,356 +288,24 @@ export async function handleOAuthCallback(
       flow: oauthState.flow,
     });
 
-    return { authCode };
+    return { user, tokens };
   } catch (error) {
     tracker.failure(error, { provider });
     throw error;
   }
 }
 
-/**
- * Exchange authorization code for tokens
- * FRONTEND CALLS THIS WITH THE AUTH CODE
- */
-export async function exchangeAuthCodeForTokens(
-  authCode: string
-): Promise<{ user: any; tokens: TokenPair }> {
-  const tracker = trackOperation('oauth.exchangeAuthCode', undefined, {
-    code: authCode.substring(0, 8) + '...',
-  });
-
-  try {
-    const authCodeData = consumeAuthCode(authCode);
-
-    if (!authCodeData) {
-      throw new UnauthorizedError('Invalid or expired authorization code');
-    }
-
-    // Fetch full user from database
-    const user = await prisma.user.findUnique({
-      where: { id: authCodeData.userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        fullName: true,
-        isEmailVerified: true,
-        profilePictureUrl: true,
-        bio: true,
-        skills: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    // Generate JWT tokens
-    const tokenPayload: JwtPayload = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    };
-
-    const tokens = generateTokenPair(tokenPayload);
-
-    // Store refresh token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
-
-    await prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshToken,
-        expiresAt,
-      },
-    });
-
-    tracker.success({
-      userId: user.id,
-      email: user.email,
-    });
-
-    return { user, tokens };
-  } catch (error) {
-    tracker.failure(error);
-    throw error;
-  }
-}
-
-/**
- * Handle OAuth LOGIN callback
- * MUST authenticate existing users ONLY
- * MAY link provider if missing
- */
-async function handleOAuthLogin(
-  _state: OAuthLoginState,
-  profile: Omit<OAuthUserData, 'role'>,
-  tracker: ReturnType<typeof trackOperation>
-): Promise<{ user: any }> {
-  const { provider, email, providerId } = profile;
-
-  // Check if OAuth provider already linked
-  const existingOAuthUser = await prisma.user.findFirst({
-    where:
-      provider === 'google'
-        ? { googleId: providerId }
-        : { githubId: providerId },
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      fullName: true,
-      isEmailVerified: true,
-      profilePictureUrl: true,
-      bio: true,
-      createdAt: true,
-    },
-  });
-
-  if (existingOAuthUser) {
-    logger.info('OAuth login: User authenticated via existing provider link', {
-      userId: existingOAuthUser.id,
-      email: existingOAuthUser.email,
-      provider,
-      providerId: providerId.substring(0, 8) + '...',
-      operation: 'oauth.login',
-      flow: 'existing_oauth_user',
-    });
-
-    // Check if email changed at provider
-    if (existingOAuthUser.email !== email) {
-      logger.info('OAuth email changed at provider, updating user record', {
-        userId: existingOAuthUser.id,
-        oldEmail: existingOAuthUser.email,
-        newEmail: email,
-        provider,
-        operation: 'oauth.login',
-      });
-
-      const updatedUser = await prisma.user.update({
-        where: { id: existingOAuthUser.id },
-        data: { email },
-        select: {
-          id: true,
-          email: true,
-          role: true,
-          fullName: true,
-          isEmailVerified: true,
-          profilePictureUrl: true,
-          bio: true,
-          createdAt: true,
-        },
-      });
-
-      tracker.success({
-        userId: updatedUser.id,
-        email: updatedUser.email,
-        flow: 'existing_oauth_user',
-        emailUpdated: true,
-      });
-
-      return { user: updatedUser };
-    }
-
-    tracker.success({
-      userId: existingOAuthUser.id,
-      email: existingOAuthUser.email,
-      flow: 'existing_oauth_user',
-    });
-
-    return { user: existingOAuthUser };
-  }
-
-  // Check if email exists (without provider linked)
-  const existingEmailUser = await prisma.user.findUnique({
-    where: { email },
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      fullName: true,
-      isEmailVerified: true,
-      profilePictureUrl: true,
-      bio: true,
-      createdAt: true,
-      googleId: true,
-      githubId: true,
-      passwordHash: true,
-    },
-  });
-
-  if (existingEmailUser) {
-    logger.info('OAuth login: Linking provider to existing email account', {
-      userId: existingEmailUser.id,
-      email: existingEmailUser.email,
-      provider,
-      providerId: providerId.substring(0, 8) + '...',
-      hadPassword: !!existingEmailUser.passwordHash,
-      operation: 'oauth.login',
-      flow: 'linking_provider',
-    });
-
-    // Link the OAuth provider to the existing account
-    const updatedUser = await prisma.user.update({
-      where: { id: existingEmailUser.id },
-      data: {
-        ...(provider === 'google' && { googleId: providerId }),
-        ...(provider === 'github' && { githubId: providerId }),
-        // Optionally update profile data if missing
-        ...(profile.avatarUrl && !existingEmailUser.profilePictureUrl
-          ? { profilePictureUrl: profile.avatarUrl }
-          : {}),
-        ...(profile.bio && !existingEmailUser.bio ? { bio: profile.bio } : {}),
-      },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        fullName: true,
-        isEmailVerified: true,
-        profilePictureUrl: true,
-        bio: true,
-        createdAt: true,
-      },
-    });
-
-    logger.info('OAuth provider linked successfully to email account', {
-      userId: updatedUser.id,
-      email: updatedUser.email,
-      provider,
-      operation: 'oauth.login',
-    });
-
-    tracker.success({
-      userId: updatedUser.id,
-      email: updatedUser.email,
-      flow: 'linking_provider',
-      providerLinked: provider,
-    });
-
-    return { user: updatedUser };
-  }
-
-  // No existing account found
-  logger.warn('OAuth login attempt for non-existent account', {
-    email,
-    provider,
-    providerId: providerId.substring(0, 8) + '...',
-    operation: 'oauth.login',
-    outcome: 'account_not_found',
-  });
-
-  throw new NotFoundError(
-    'No account found with this email. Please register first.'
-  );
-}
-
-/**
- * Handle OAuth REGISTER callback
- * MUST create new users ONLY
- * MUST wrap user + refresh token in transaction
- */
-async function handleOAuthRegister(
-  state: OAuthRegisterState,
-  profile: Omit<OAuthUserData, 'role'>,
-  tracker: ReturnType<typeof trackOperation>
-): Promise<{ user: any }> {
-  const { provider, email, providerId, fullName, avatarUrl, bio } = profile;
-  const { role } = state;
-
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const existingUser = await tx.user.findFirst({
-        where: {
-          OR: [
-            { email },
-            ...(provider === 'google' ? [{ googleId: providerId }] : []),
-            ...(provider === 'github' ? [{ githubId: providerId }] : []),
-          ],
-        },
-      });
-
-      if (existingUser) {
-        throw new ConflictError(
-          'Account already exists. Please use login instead.'
-        );
-      }
-
-      const newUser = await tx.user.create({
-        data: {
-          email,
-          fullName,
-          role,
-          isEmailVerified: true,
-          emailVerifiedAt: new Date(),
-          profilePictureUrl: avatarUrl ?? null,
-          bio: bio ?? null,
-          skills: [],
-          ...(provider === 'google' && { googleId: providerId }),
-          ...(provider === 'github' && { githubId: providerId }),
-        },
-        select: {
-          id: true,
-          email: true,
-          role: true,
-          fullName: true,
-          isEmailVerified: true,
-          profilePictureUrl: true,
-          bio: true,
-          createdAt: true,
-        },
-      });
-
-      return { user: newUser };
-    });
-
-    logger.info('New user created via OAuth', {
-      userId: result.user.id,
-      email: result.user.email,
-      provider,
-      role: result.user.role,
-      operation: 'oauth.register',
-    });
-
-    tracker.success({
-      userId: result.user.id,
-      email: result.user.email,
-      role: result.user.role,
-      flow: 'register',
-    });
-
-    return result;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      logger.error('OAuth registration race condition detected', {
-        provider,
-        email,
-        error: error.message,
-        operation: 'oauth.register',
-      });
-
-      throw new ConflictError(
-        'Account already exists. Please use login instead.'
-      );
-    }
-
-    throw error;
-  }
-}
-
 // ===================================
-// TOKEN EXCHANGE
+// TOKEN EXCHANGE WITH PKCE
 // ===================================
 
 /**
- * Exchange authorization code for access token
+ * Exchange authorization code for access token with PKCE verification
  */
 async function exchangeCodeForToken(
   provider: OAuthProvider,
-  code: string
+  code: string,
+  codeVerifier: string
 ): Promise<string> {
   const tracker = trackOperation('oauth.exchangeToken', undefined, {
     provider,
@@ -723,6 +322,8 @@ async function exchangeCodeForToken(
           client_secret: env.GOOGLE_CLIENT_SECRET,
           redirect_uri: env.GOOGLE_CALLBACK_URL,
           grant_type: 'authorization_code',
+          // PKCE verification
+          code_verifier: codeVerifier,
         }),
       });
 
@@ -746,6 +347,9 @@ async function exchangeCodeForToken(
     }
 
     if (provider === 'github') {
+      // GitHub doesn't support PKCE yet, but we validate on our end
+      // by checking that the state matches (already done in callback handler)
+
       const response = await fetch(GITHUB_TOKEN_URL, {
         method: 'POST',
         headers: {
@@ -832,7 +436,6 @@ async function fetchUserProfile(
       const rawProfile: unknown = await response.json();
       const profile = googleProfileSchema.parse(rawProfile);
 
-      // Validate email is verified
       if (!profile.email_verified) {
         throw new UnauthorizedError('Google email not verified');
       }
@@ -850,7 +453,6 @@ async function fetchUserProfile(
     }
 
     if (provider === 'github') {
-      // Fetch profile
       const profileResponse = await fetch(GITHUB_PROFILE_URL, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -871,7 +473,6 @@ async function fetchUserProfile(
       const rawProfile: unknown = await profileResponse.json();
       const profile = githubProfileSchema.parse(rawProfile);
 
-      // Fetch emails (GitHub doesn't always include email in profile)
       const emailResponse = await fetch(GITHUB_EMAIL_URL, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -892,7 +493,6 @@ async function fetchUserProfile(
       const rawEmails: unknown = await emailResponse.json();
       const emails = z.array(githubEmailSchema).parse(rawEmails);
 
-      // Get primary verified email
       const primaryEmail = emails.find((e) => e.primary && e.verified);
 
       if (!primaryEmail) {
@@ -929,6 +529,282 @@ async function fetchUserProfile(
     }
 
     tracker.failure(error, { provider });
+    throw error;
+  }
+}
+
+// ===================================
+// LOGIN HANDLER
+// ===================================
+
+async function handleOAuthLogin(
+  _state: OAuthLoginState,
+  profile: Omit<OAuthUserData, 'role'>,
+  tracker: ReturnType<typeof trackOperation>
+): Promise<{ user: OAuthUser; tokens: TokenPair }> {
+  const { provider, email, providerId } = profile;
+
+  const existingOAuthUser = await prisma.user.findFirst({
+    where:
+      provider === 'google'
+        ? { googleId: providerId }
+        : { githubId: providerId },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      fullName: true,
+      isEmailVerified: true,
+      profilePictureUrl: true,
+      bio: true,
+      createdAt: true,
+    },
+  });
+
+  if (existingOAuthUser) {
+    logger.info('OAuth login: Existing user authenticated', {
+      userId: existingOAuthUser.id,
+      email: existingOAuthUser.email,
+      provider,
+      operation: 'oauth.login',
+    });
+
+    // Generate tokens
+    const tokenPayload: JwtPayload = {
+      userId: existingOAuthUser.id,
+      email: existingOAuthUser.email,
+      role: existingOAuthUser.role,
+    };
+
+    const tokens = generateTokenPair(tokenPayload);
+
+    // Create token family
+    await createTokenFamily(existingOAuthUser.id, tokens.refreshToken);
+
+    // Store refresh token in DB
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.refreshToken.create({
+      data: {
+        userId: existingOAuthUser.id,
+        token: tokens.refreshToken,
+        expiresAt,
+      },
+    });
+
+    tracker.success({
+      userId: existingOAuthUser.id,
+      email: existingOAuthUser.email,
+      flow: 'login',
+    });
+
+    return { user: existingOAuthUser, tokens };
+  }
+
+  const existingEmailUser = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      fullName: true,
+      isEmailVerified: true,
+      profilePictureUrl: true,
+      bio: true,
+      createdAt: true,
+      googleId: true,
+      githubId: true,
+      passwordHash: true,
+    },
+  });
+
+  if (existingEmailUser) {
+    logger.info('OAuth login: Linking provider to existing account', {
+      userId: existingEmailUser.id,
+      email: existingEmailUser.email,
+      provider,
+      operation: 'oauth.login',
+    });
+
+    const updatedUser = await prisma.user.update({
+      where: { id: existingEmailUser.id },
+      data: {
+        ...(provider === 'google' && { googleId: providerId }),
+        ...(provider === 'github' && { githubId: providerId }),
+        ...(profile.avatarUrl && !existingEmailUser.profilePictureUrl
+          ? { profilePictureUrl: profile.avatarUrl }
+          : {}),
+        ...(profile.bio && !existingEmailUser.bio ? { bio: profile.bio } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        fullName: true,
+        isEmailVerified: true,
+        profilePictureUrl: true,
+        bio: true,
+        createdAt: true,
+      },
+    });
+
+    // Generate tokens
+    const tokenPayload: JwtPayload = {
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.role,
+    };
+
+    const tokens = generateTokenPair(tokenPayload);
+
+    // Create token family
+    await createTokenFamily(updatedUser.id, tokens.refreshToken);
+
+    // Store refresh token
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.refreshToken.create({
+      data: {
+        userId: updatedUser.id,
+        token: tokens.refreshToken,
+        expiresAt,
+      },
+    });
+
+    tracker.success({
+      userId: updatedUser.id,
+      email: updatedUser.email,
+      flow: 'login_link',
+    });
+
+    return { user: updatedUser, tokens };
+  }
+
+  logger.warn('OAuth login: No account found', {
+    email,
+    provider,
+    operation: 'oauth.login',
+  });
+
+  throw new NotFoundError(
+    'No account found with this email. Please register first.'
+  );
+}
+
+// ===================================
+// REGISTER HANDLER
+// ===================================
+
+async function handleOAuthRegister(
+  state: OAuthRegisterState,
+  profile: Omit<OAuthUserData, 'role'>,
+  tracker: ReturnType<typeof trackOperation>
+): Promise<{ user: OAuthUser; tokens: TokenPair }> {
+  const { provider, email, providerId, fullName, avatarUrl, bio } = profile;
+  const { role } = state;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existingUser = await tx.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            ...(provider === 'google' ? [{ googleId: providerId }] : []),
+            ...(provider === 'github' ? [{ githubId: providerId }] : []),
+          ],
+        },
+      });
+
+      if (existingUser) {
+        throw new ConflictError(
+          'Account already exists. Please use login instead.'
+        );
+      }
+
+      const newUser = await tx.user.create({
+        data: {
+          email,
+          fullName,
+          role,
+          isEmailVerified: true,
+          emailVerifiedAt: new Date(),
+          profilePictureUrl: avatarUrl ?? null,
+          bio: bio ?? null,
+          skills: [],
+          ...(provider === 'google' && { googleId: providerId }),
+          ...(provider === 'github' && { githubId: providerId }),
+        },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          fullName: true,
+          isEmailVerified: true,
+          profilePictureUrl: true,
+          bio: true,
+          createdAt: true,
+        },
+      });
+
+      // Generate tokens
+      const tokenPayload: JwtPayload = {
+        userId: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+      };
+
+      const tokens = generateTokenPair(tokenPayload);
+
+      // Create token family
+      await createTokenFamily(newUser.id, tokens.refreshToken);
+
+      // Store refresh token
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      await tx.refreshToken.create({
+        data: {
+          userId: newUser.id,
+          token: tokens.refreshToken,
+          expiresAt,
+        },
+      });
+
+      return { user: newUser, tokens };
+    });
+
+    logger.info('OAuth register: New user created', {
+      userId: result.user.id,
+      email: result.user.email,
+      provider,
+      role: result.user.role,
+      operation: 'oauth.register',
+    });
+
+    tracker.success({
+      userId: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      flow: 'register',
+    });
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      logger.error('OAuth registration race condition', {
+        provider,
+        email,
+        error: error.message,
+        operation: 'oauth.register',
+      });
+
+      throw new ConflictError(
+        'Account already exists. Please use login instead.'
+      );
+    }
+
     throw error;
   }
 }

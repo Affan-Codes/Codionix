@@ -65,6 +65,30 @@ const envSchema = z.object({
       message: 'DB_SLOW_QUERY_THRESHOLD_MS must be at least 100ms',
     }),
 
+  // Redis Configuration
+  REDIS_URL: z.string().min(1, 'Redis URL is required for OAuth state storage'),
+  REDIS_MAX_RETRIES: z.string().default('3').transform(Number),
+  REDIS_RETRY_DELAY_MS: z.string().default('1000').transform(Number),
+  REDIS_CONNECT_TIMEOUT: z.string().default('10000').transform(Number),
+  REDIS_COMMAND_TIMEOUT: z.string().default('5000').transform(Number),
+  REDIS_PREFIX: z.string().default('codionix'),
+
+  // Cookie Configuration
+  COOKIE_SECRET: z
+    .string()
+    .min(32, 'Cookie secret must be at least 32 characters for security'),
+  COOKIE_DOMAIN: z.string().optional(),
+  COOKIE_SECURE: z
+    .string()
+    .default('false')
+    .transform((val) => val === 'true'),
+  COOKIE_SAME_SITE: z.enum(['strict', 'lax', 'none']).default('lax'),
+  COOKIE_MAX_AGE: z.string().default('604800000').transform(Number),
+
+  // OAuth PKCE Configuration
+  OAUTH_STATE_EXPIRY_MS: z.string().default('600000').transform(Number),
+  PKCE_CODE_VERIFIER_LENGTH: z.string().default('128').transform(Number),
+
   // JWT
   JWT_ACCESS_SECRET: z
     .string()

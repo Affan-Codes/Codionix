@@ -23,11 +23,6 @@ export const ROUTES = {
   PROJECT_APPLICANT: "/projects/:id/applicants",
 } as const;
 
-export const STORAGE_KEYS = {
-  REFRESH_TOKEN: "refreshToken",
-  USER: "user",
-} as const;
-
 export const USER_ROLES = {
   STUDENT: "STUDENT",
   MENTOR: "MENTOR",

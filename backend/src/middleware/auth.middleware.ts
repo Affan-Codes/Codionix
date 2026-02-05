@@ -14,12 +14,18 @@ export const authenticate = async (
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
+    let token: string | null = null;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedError('No token provided');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else {
+      // Fall back to cookie (web browser clients)
+      token = req.signedCookies?.access_token || null;
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    if (!token) {
+      throw new UnauthorizedError('No token provided');
+    }
 
     // Verify token
     const payload = verifyAccessToken(token);

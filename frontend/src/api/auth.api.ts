@@ -46,28 +46,21 @@ export const authApi = {
     return response.data.data!;
   },
 
-  // Exchange authorization code for tokens
-  exchangeAuthCode: async (code: string): Promise<AuthResponse> => {
-    const response = await apiClient.post<ApiResponse<AuthResponse>>(
-      "/auth/oauth/exchange",
-      { code },
-    );
-    return response.data.data!;
-  },
-
   // Refresh access token
-  refreshToken: async (
-    refreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string }> => {
-    const response = await apiClient.post<
-      ApiResponse<{ accessToken: string; refreshToken: string }>
-    >("/auth/refresh", { refreshToken });
+  refreshToken: async (): Promise<{
+    accessToken: string;
+    refreshToken: string;
+  }> => {
+    const response =
+      await apiClient.post<
+        ApiResponse<{ accessToken: string; refreshToken: string }>
+      >("/auth/refresh");
     return response.data.data!;
   },
 
   // Logout user
-  logout: async (refreshToken: string): Promise<void> => {
-    await apiClient.post("/auth/logout", { refreshToken });
+  logout: async (): Promise<void> => {
+    await apiClient.post("/auth/logout");
   },
 
   // Verify email with token

@@ -27,6 +27,12 @@ import {
   sendPasswordResetNotification,
   sendWelcomeNotification,
 } from './notification.service.js';
+import {
+  addTokenToFamily,
+  createTokenFamily,
+  deleteTokenFamily,
+  detectTokenReuse,
+} from '../utils/tokenFamily.js';
 
 // ===================================
 // TYPES
@@ -49,9 +55,6 @@ export interface AuthResponse {
 // HELPER FUNCTIONS
 // ===================================
 
-/**
- * Generate secure random token
- */
 const generateSecureToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
@@ -131,6 +134,9 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
 
       // Generate token pair
       const tokens = generateTokenPair(tokenPayload);
+
+      // Create token family for theft detection
+      await createTokenFamily(user.id, tokens.refreshToken);
 
       // Store refresh token in same transaction
       const expiresAt = new Date();
@@ -243,6 +249,9 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
     };
 
     const tokens = generateTokenPair(tokenPayload);
+
+    // Create token family for theft detection
+    await createTokenFamily(user.id, tokens.refreshToken);
 
     // Store refresh token
     const expiresAt = new Date();
@@ -425,6 +434,22 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
     // Verify refresh token
     const payload = verifyRefreshToken(token);
 
+    // Check for token reuse (theft detection)
+    const isReused = await detectTokenReuse(token);
+
+    if (isReused) {
+      logger.error('🚨 TOKEN THEFT DETECTED - Token was reused', {
+        userId: payload.userId,
+        email: payload.email,
+        operation: 'auth.refreshToken',
+        severity: 'critical',
+      });
+
+      throw new UnauthorizedError(
+        'Token reuse detected. Please log in again for security.'
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // Lock the row for update using transaction-scoped client
       const storedToken = await tx.refreshToken.findUnique({
@@ -471,6 +496,13 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
       };
 
       const newTokens = generateTokenPair(tokenPayload);
+
+      // Add new token to family (marks old token as used)
+      await addTokenToFamily(
+        user.id,
+        storedToken.token,
+        newTokens.refreshToken
+      );
 
       // Revoke the old token and create a new one in the same transaction
       await tx.refreshToken.update({
@@ -520,6 +552,9 @@ export const logout = async (token: string): Promise<void> => {
       });
       throw new UnauthorizedError('Invalid refresh token');
     }
+
+    // Delete token family on logout
+    await deleteTokenFamily(storedToken.userId, token);
 
     await prisma.refreshToken.update({
       where: { token },

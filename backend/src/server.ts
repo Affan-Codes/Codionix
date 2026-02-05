@@ -15,11 +15,14 @@ import {
   initializeSocketServer,
   shutdownSocketServer,
 } from './config/socket.js';
+// eslint-disable-next-line
 import {
   initializeMetrics,
   startMetricsCollection,
   stopMetricsCollection,
 } from './services/metrics.service.js';
+import { startGrafanaAgent, stopGrafanaAgent } from './config/grafanaAgent.js';
+import { redis } from './config/redis.js';
 
 const PORT = env.PORT;
 
@@ -83,6 +86,9 @@ const startServer = async () => {
     // Connect to database with retry logic
     await db.connect();
 
+    // Redis connection
+    await redis.connect();
+
     // Start pool monitoring
     startPoolMonitoring();
 
@@ -90,10 +96,13 @@ const startServer = async () => {
     initializeCloudinary();
 
     // Initialize metrics collection
-    initializeMetrics();
+    // initializeMetrics();
 
     // Start periodic metrics updates (every 15 seconds)
-    metricsInterval = startMetricsCollection(env.METRICS_COLLECT_INTERVAL_MS);
+    // metricsInterval = startMetricsCollection(env.METRICS_COLLECT_INTERVAL_MS);
+
+    // Start Grafana Cloud agent (pushes metrics every 15s)
+    // startGrafanaAgent();
 
     // Start email queue
     startEmailQueue();
@@ -117,6 +126,7 @@ const startServer = async () => {
         `✅ Metrics (Prometheus): http://localhost:${PORT}/api/v1/metrics/prometheus`
       );
       logger.info(`✅ Socket.io: ws://localhost:${PORT}`);
+      logger.info(`✅ Redis: Connected`);
     });
 
     // ===================================
@@ -153,10 +163,13 @@ const startServer = async () => {
         }
 
         // Stop metrics collection
-        if (metricsInterval) {
-          stopMetricsCollection(metricsInterval);
-          metricsInterval = null;
-        }
+        // if (metricsInterval) {
+        //   stopMetricsCollection(metricsInterval);
+        //   metricsInterval = null;
+        // }
+
+        // Stop Grafana agent
+        // stopGrafanaAgent();
 
         // Shutdown Socket.io
         await shutdownSocketServer();
@@ -169,6 +182,9 @@ const startServer = async () => {
 
         // Stop pool monitoring
         stopPoolMonitoring();
+
+        // Disconnect Redis
+        await redis.disconnect();
 
         // Disconnect database
         await db.disconnect();
@@ -204,6 +220,18 @@ const startServer = async () => {
 
         if (metricsInterval) {
           stopMetricsCollection(metricsInterval);
+        }
+
+        // Force disconnect Redis
+        try {
+          await redis.disconnect();
+        } catch (redisError) {
+          logger.error('Failed to disconnect Redis during error recovery', {
+            error:
+              redisError instanceof Error
+                ? redisError.message
+                : 'Unknown error',
+          });
         }
 
         try {

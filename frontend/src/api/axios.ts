@@ -16,27 +16,6 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 }
 
 // ===================================
-// ACCESS TOKEN MANAGEMENT
-// ===================================
-
-/**
- * Access token stored in memory (not persisted)
- */
-let accessTokenMemory: string | null = null;
-
-export function setAccessToken(token: string | null): void {
-  accessTokenMemory = token;
-}
-
-export function getAccessToken(): string | null {
-  return accessTokenMemory;
-}
-
-export function clearAccessToken(): void {
-  accessTokenMemory = null;
-}
-
-// ===================================
 // AXIOS INSTANCE
 // ===================================
 
@@ -46,6 +25,7 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
 });
 
 // ===================================
@@ -78,12 +58,6 @@ const processQueue = (error: unknown, token: string | null = null) => {
 
 apiClient.interceptors.request.use(
   (config: CustomAxiosRequestConfig) => {
-    // Add auth token from memory
-    const token = getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
     return config;
   },
   (error) => {
@@ -100,10 +74,7 @@ apiClient.interceptors.response.use(
   async (error: any) => {
     const originalRequest = error.config as CustomAxiosRequestConfig;
 
-    // ===================================
-    // NETWORK ERROR HANDLING
-    // ===================================
-
+    // Network error handling
     if (!error.response && error.code === "ERR_NETWORK") {
       return Promise.reject({
         ...error,
@@ -113,10 +84,7 @@ apiClient.interceptors.response.use(
       });
     }
 
-    // ===================================
-    // RATE LIMIT HANDLING (429)
-    // ===================================
-
+    // Rate limit handling
     if (error.response?.status === 429) {
       const resetTime = error.response.headers["ratelimit-reset"];
       let retryAfterMinutes: number | null = null;
@@ -138,16 +106,7 @@ apiClient.interceptors.response.use(
       });
     }
 
-    // ===================================
-    // SERVER ERROR HANDLING (500-599)
-    // ===================================
-
-    /**
-     * Handle server errors (500, 502, 503, 504)
-     *
-     * Strategy: Retry once after 1 second for transient failures
-     * Common causes: Server restart, deployment, database connection spike
-     */
+    // Server error handling with retry
     const isServerError =
       error.response?.status >= 500 && error.response?.status < 600;
     const isRetryableMethod = ["GET", "HEAD", "OPTIONS"].includes(
@@ -175,16 +134,7 @@ apiClient.interceptors.response.use(
       });
     }
 
-    // ===================================
-    // TIMEOUT HANDLING
-    // ===================================
-
-    /**
-     * Handle timeout errors (request took too long)
-     *
-     * Don't retry - if it timed out once, it'll likely timeout again
-     * User might be on slow connection or server is overloaded
-     */
+    // Timeout handling
     if (error.code === "ECONNABORTED" || error.code === "ERR_TIMEOUT") {
       return Promise.reject({
         ...error,
@@ -194,23 +144,9 @@ apiClient.interceptors.response.use(
       });
     }
 
-    // ===================================
-    // UNAUTHORIZED (401) - TOKEN REFRESH
-    // ===================================
-
-    /**
-     * PRODUCTION-GRADE TOKEN REFRESH LOGIC
-     *
-     * CRITICAL BEHAVIOR:
-     * - Distinguish between invalid token (401) and transient errors (network/500)
-     * - Only force logout on CONFIRMED 401
-     * - On network error during refresh, KEEP old token (allows retry)
-     * - Queue concurrent requests during refresh
-     */
+    // 401 Unauthorized - Token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        // Another request is already refreshing the token
-        // Queue this request until token is refreshed
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -233,31 +169,26 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
         processQueue(new Error("No refresh token"), null);
         clearAllAuthData();
-        clearAccessToken();
         window.location.href = "/login";
         return Promise.reject(error);
       }
 
       try {
-        // Attempt to refresh the token
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
+        console.info("Refreshing access token...");
 
-        const { accessToken, refreshToken: newRefreshToken } =
-          response.data.data;
+        // Call refresh endpoint - new cookies will be set automatically
+        const { authApi } = await import("@/api/auth.api");
+        const tokens = await authApi.refreshToken(refreshToken);
 
-        setAccessToken(accessToken);
-        setRefreshToken(newRefreshToken);
-        // Update authorization header for original request
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        // Update refresh token in sessionStorage
+        setRefreshToken(tokens.refreshToken);
 
-        // Process all queued requests
-        processQueue(null, accessToken);
+        // Process queued requests
+        processQueue(null, "cookie");
 
         isRefreshing = false;
 
-        // Retry the original request
+        // Retry original request (new cookies already set)
         return apiClient(originalRequest);
       } catch (refreshError: any) {
         processQueue(refreshError, null);
@@ -265,7 +196,6 @@ apiClient.interceptors.response.use(
 
         if (refreshError.response?.status === 401) {
           clearAllAuthData();
-          clearAccessToken();
           window.location.href = "/login";
           return Promise.reject(refreshError);
         }
@@ -290,7 +220,6 @@ apiClient.interceptors.response.use(
 
         // Force logout as safety measure
         clearAllAuthData();
-        clearAccessToken();
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }
