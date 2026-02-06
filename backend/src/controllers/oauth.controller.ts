@@ -14,6 +14,7 @@ import {
   NotFoundError,
   UnauthorizedError,
 } from '../utils/errors.js';
+import { issueCsrfToken } from '../middleware/csrf.middleware.js';
 
 interface OAuthCallbackQuery {
   code?: string;
@@ -103,10 +104,13 @@ export const googleCallback = asyncHandler(
       });
 
       // Set httpOnly cookies
-      setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+      setAuthCookies(res, tokens);
 
-      // Redirect to frontend dashboard (cookies are already set)
-      const successUrl = `${env.FRONTEND_URL}/dashboard`;
+      // Issue CSRF token for subsequent requests
+      issueCsrfToken(res);
+
+      // Redirect to frontend (cookies are already set)
+      const successUrl = `${env.FRONTEND_URL}/auth/oauth/callback`;
       res.redirect(successUrl);
     } catch (error) {
       logger.error('Google OAuth callback failed', {
@@ -172,10 +176,13 @@ export const githubCallback = asyncHandler(
       });
 
       // Set httpOnly cookies
-      setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+      setAuthCookies(res, tokens);
 
-      // Redirect to frontend dashboard (cookies are already set)
-      const successUrl = `${env.FRONTEND_URL}/dashboard`;
+      // Issue CSRF token for subsequent requests
+      issueCsrfToken(res);
+
+      // Redirect to frontend (cookies are already set)
+      const successUrl = `${env.FRONTEND_URL}/auth/oauth/callback`;
       res.redirect(successUrl);
     } catch (error) {
       logger.error('GitHub OAuth callback failed', {

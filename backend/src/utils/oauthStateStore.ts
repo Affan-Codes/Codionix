@@ -4,7 +4,7 @@ import { logger } from './logger.js';
 import crypto from 'crypto';
 import type { OAuthRegisterState, OAuthState } from '../types/oauth.types.js';
 
-const redis = getRedisClient(); // Get the Redis client instance
+const redis = getRedisClient();
 const STATE_PREFIX = `${env.REDIS_PREFIX}:oauth:state`;
 const STATE_TTL_SECONDS = Math.floor(env.OAUTH_STATE_EXPIRY_MS / 1000);
 
@@ -32,6 +32,7 @@ export async function storeOAuthState(
       provider: state.provider,
       flow: 'login',
       nonce,
+      codeVerifier: state.codeVerifier,
       createdAt: now,
       expiresAt: now + env.OAUTH_STATE_EXPIRY_MS,
     };
@@ -46,6 +47,7 @@ export async function storeOAuthState(
       flow: 'register',
       role: registerState.role,
       nonce,
+      codeVerifier: registerState.codeVerifier,
       createdAt: now,
       expiresAt: now + env.OAUTH_STATE_EXPIRY_MS,
     };
@@ -61,6 +63,7 @@ export async function storeOAuthState(
       token: token.substring(0, 8) + '...',
       provider: state.provider,
       flow: state.flow,
+      hasPkceVerifier: !!state.codeVerifier,
       ttl: `${STATE_TTL_SECONDS}s`,
       operation: 'oauth.storeState',
     });
@@ -114,6 +117,7 @@ export async function consumeOAuthState(
       token: token.substring(0, 8) + '...',
       provider: state.provider,
       flow: state.flow,
+      hasPkceVerifier: !!state.codeVerifier,
       ageMs: Date.now() - state.createdAt,
       operation: 'oauth.consumeState',
     });

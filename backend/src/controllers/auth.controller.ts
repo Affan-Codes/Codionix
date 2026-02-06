@@ -5,13 +5,20 @@ import { ApiResponse } from '../utils/apiResponse.js';
 import type {
   ForgotPasswordInput,
   LoginInput,
-  LogoutInput,
-  RefreshTokenInput,
   RegisterInput,
   ResendVerificationInput,
   ResetPasswordInput,
   VerifyEmailInput,
 } from '../validators/auth.validator.js';
+import {
+  clearAuthCookies,
+  getRefreshTokenFromCookies,
+  setAuthCookies,
+} from '../utils/cookieUtils.js';
+import {
+  clearCsrfToken,
+  issueCsrfToken,
+} from '../middleware/csrf.middleware.js';
 
 /**
  * Register a new user
@@ -20,7 +27,13 @@ import type {
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const data: RegisterInput = req.body;
   const result = await authService.register(data);
-  ApiResponse.created(res, result);
+
+  setAuthCookies(res, result.tokens);
+  issueCsrfToken(res);
+  ApiResponse.created(res, {
+    user: result.user,
+    message: 'Registration successful. Please verify your email.',
+  });
 });
 
 /**
@@ -30,7 +43,14 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const data: LoginInput = req.body;
   const result = await authService.login(data);
-  ApiResponse.success(res, result);
+
+  setAuthCookies(res, result.tokens);
+  issueCsrfToken(res);
+
+  ApiResponse.success(res, {
+    user: result.user,
+    message: 'Login successful',
+  });
 });
 
 /**
@@ -61,9 +81,24 @@ export const resendVerification = asyncHandler(
  */
 export const refreshToken = asyncHandler(
   async (req: Request, res: Response) => {
-    const { refreshToken }: RefreshTokenInput = req.body;
+    // Extract refresh token from signed cookie ONLY
+    const refreshToken = getRefreshTokenFromCookies(req);
+
+    if (!refreshToken) {
+      ApiResponse.error(res, 'Refresh token required', 401, 'UNAUTHORIZED');
+      return;
+    }
+
+    // Perform token rotation (includes theft detection)
     const tokens = await authService.refreshAccessToken(refreshToken);
-    ApiResponse.success(res, tokens);
+
+    // Set new tokens in httpOnly cookies
+    setAuthCookies(res, tokens);
+
+    // Return success (no tokens in body)
+    ApiResponse.success(res, {
+      message: 'Token refreshed successfully',
+    });
   }
 );
 
@@ -72,8 +107,21 @@ export const refreshToken = asyncHandler(
  * POST /api/v1/auth/logout
  */
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: LogoutInput = req.body;
+  const refreshToken = getRefreshTokenFromCookies(req);
+
+  // Always clear cookies, even if token missing/invalid
+  clearAuthCookies(res);
+  clearCsrfToken(res);
+
+  if (!refreshToken) {
+    // No token to revoke, but cookies cleared
+    ApiResponse.success(res, { message: 'Logged out successfully' });
+    return;
+  }
+
+  // Revoke token in DB (never throws)
   await authService.logout(refreshToken);
+
   ApiResponse.success(res, { message: 'Logged out successfully' });
 });
 

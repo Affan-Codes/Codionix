@@ -8,7 +8,6 @@ import {
 import {
   generateTokenPair,
   verifyRefreshToken,
-  type JwtPayload,
   type TokenPair,
 } from '../utils/jwt.js';
 import { logger, trackOperation } from '../utils/logger.js';
@@ -28,11 +27,10 @@ import {
   sendWelcomeNotification,
 } from './notification.service.js';
 import {
-  addTokenToFamily,
-  createTokenFamily,
-  deleteTokenFamily,
   detectTokenReuse,
-} from '../utils/tokenFamily.js';
+  isTokenRevoked,
+  revokeToken,
+} from './tokenRevocation.service.js';
 
 // ===================================
 // TYPES
@@ -97,13 +95,6 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
     const verificationExpiry = new Date();
     verificationExpiry.setHours(verificationExpiry.getHours() + 24); // 24 hours
 
-    // Generate tokens BEFORE transaction
-    const tokenPayload: JwtPayload = {
-      userId: '', // Will be filled after user creation
-      email,
-      role,
-    };
-
     // Atomic transaction for user + refresh token
     const result = await prisma.$transaction(async (tx) => {
       // Create User
@@ -129,24 +120,23 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
         },
       });
 
-      // Update token payload with real user ID
-      tokenPayload.userId = user.id;
-
       // Generate token pair
-      const tokens = generateTokenPair(tokenPayload);
+      const tokens = generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
 
-      // Create token family for theft detection
-      await createTokenFamily(user.id, tokens.refreshToken);
-
-      // Store refresh token in same transaction
+      // Store refresh token in DB
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
       await tx.refreshToken.create({
         data: {
           userId: user.id,
-          token: tokens.refreshToken,
+          token: tokens.refreshTokenId,
           expiresAt,
+          isRevoked: false,
         },
       });
 
@@ -242,16 +232,11 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
     }
 
     // Generate tokens
-    const tokenPayload: JwtPayload = {
+    const tokens = generateTokenPair({
       userId: user.id,
       email: user.email,
       role: user.role,
-    };
-
-    const tokens = generateTokenPair(tokenPayload);
-
-    // Create token family for theft detection
-    await createTokenFamily(user.id, tokens.refreshToken);
+    });
 
     // Store refresh token
     const expiresAt = new Date();
@@ -260,8 +245,9 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
     await prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: tokens.refreshToken,
+        token: tokens.refreshTokenId,
         expiresAt,
+        isRevoked: false,
       },
     });
 
@@ -435,99 +421,85 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
     const payload = verifyRefreshToken(token);
 
     // Check for token reuse (theft detection)
-    const isReused = await detectTokenReuse(token);
+    const isReused = await detectTokenReuse(payload.jti, payload.userId);
 
     if (isReused) {
-      logger.error('🚨 TOKEN THEFT DETECTED - Token was reused', {
+      logger.error('🚨 TOKEN THEFT DETECTED - All user tokens revoked', {
         userId: payload.userId,
         email: payload.email,
+        jti: payload.jti,
         operation: 'auth.refreshToken',
         severity: 'critical',
       });
 
       throw new UnauthorizedError(
-        'Token reuse detected. Please log in again for security.'
+        'Token reuse detected. All sessions have been revoked. Please log in again.'
       );
     }
 
+    // Check if token is revoked
+    const revoked = await isTokenRevoked(payload.jti);
+
+    if (revoked) {
+      logger.warn('Token refresh attempted with revoked token', {
+        operation: 'auth.refreshToken',
+        jti: payload.jti,
+        outcome: 'unauthorized',
+      });
+      throw new UnauthorizedError('Refresh token has been revoked');
+    }
+
+    // Verify user exists
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, email: true, role: true },
+    });
+
+    if (!user) {
+      logger.error('Token refresh for non-existent user', {
+        operation: 'auth.refreshToken',
+        userId: payload.userId,
+        outcome: 'not_found',
+      });
+      throw new NotFoundError('User not found');
+    }
+
     const result = await prisma.$transaction(async (tx) => {
-      // Lock the row for update using transaction-scoped client
-      const storedToken = await tx.refreshToken.findUnique({
-        where: { token },
-      });
-
-      if (!storedToken || storedToken.isRevoked) {
-        logger.warn('Token refresh attempted with invalid token', {
-          operation: 'auth.refreshToken',
-          outcome: 'unauthorized',
-        });
-        throw new UnauthorizedError('Invalid refresh token');
-      }
-
-      if (storedToken.expiresAt < new Date()) {
-        logger.warn('Token refresh attempted with expired token', {
-          operation: 'auth.refreshToken',
-          userId: storedToken.userId,
-          outcome: 'unauthorized',
-        });
-        throw new UnauthorizedError('Refresh token expired');
-      }
-
-      // Verify user exists
-      const user = await prisma.user.findUnique({
-        where: { id: payload.userId },
-        select: { id: true, email: true, role: true },
-      });
-
-      if (!user) {
-        logger.error('Token refresh for non-existent user', {
-          operation: 'auth.refreshToken',
-          userId: payload.userId,
-          outcome: 'not_found',
-        });
-        throw new NotFoundError('User not found');
-      }
-
-      // Generate new tokens
-      const tokenPayload: JwtPayload = {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      };
-
-      const newTokens = generateTokenPair(tokenPayload);
-
-      // Add new token to family (marks old token as used)
-      await addTokenToFamily(
-        user.id,
-        storedToken.token,
-        newTokens.refreshToken
-      );
-
-      // Revoke the old token and create a new one in the same transaction
-      await tx.refreshToken.update({
-        where: { token },
+      // Revoke old token
+      await tx.refreshToken.updateMany({
+        where: { token: payload.jti },
         data: { isRevoked: true },
       });
 
-      // Create new Token
+      // Generate new tokens
+      const newTokens = generateTokenPair({
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
+
+      // Store new refresh token
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
       await tx.refreshToken.create({
         data: {
           userId: user.id,
-          token: newTokens.refreshToken,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          token: newTokens.refreshTokenId,
+          expiresAt,
+          isRevoked: false,
         },
       });
 
-      return { newTokens, user };
+      return newTokens;
     });
 
     tracker.success({
-      userId: result.user.id,
-      email: result.user.email,
+      userId: user.id,
+      email: user.email,
     });
 
-    return result.newTokens;
+    return result;
   } catch (error) {
     tracker.failure(error);
     throw error;
@@ -537,36 +509,24 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
 /**
  * Logout user (revoke refresh token)
  */
-export const logout = async (token: string): Promise<void> => {
+export const logout = async (refreshToken: string): Promise<void> => {
   const tracker = trackOperation('auth.logout');
 
   try {
-    const storedToken = await prisma.refreshToken.findUnique({
-      where: { token },
-    });
-
-    if (!storedToken) {
-      logger.warn('Logout attempted with invalid token', {
-        operation: 'auth.logout',
-        outcome: 'unauthorized',
-      });
-      throw new UnauthorizedError('Invalid refresh token');
-    }
-
-    // Delete token family on logout
-    await deleteTokenFamily(storedToken.userId, token);
-
-    await prisma.refreshToken.update({
-      where: { token },
-      data: { isRevoked: true },
-    });
+    // Verify token to get JTI
+    const payload = verifyRefreshToken(refreshToken);
+    // Revoke token
+    await revokeToken(payload.jti);
 
     tracker.success({
-      userId: storedToken.userId,
+      userId: payload.userId,
+      jti: payload.jti,
     });
   } catch (error) {
-    tracker.failure(error);
-    throw error;
+    // Log but don't throw - logout should always succeed
+    logger.warn('Logout attempted with invalid token', {
+      error: error instanceof Error ? error.message : 'Unknown',
+    });
   }
 };
 

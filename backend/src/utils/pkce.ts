@@ -35,15 +35,18 @@ export function generateCodeChallenge(verifier: string): string {
 
 /**
  * Verify code verifier against challenge
- *
- * Used during token exchange to validate PKCE
  */
 export function verifyCodeChallenge(
   verifier: string,
   challenge: string
 ): boolean {
   const computedChallenge = generateCodeChallenge(verifier);
-  return computedChallenge === challenge;
+
+  // Constant-time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(computedChallenge),
+    Buffer.from(challenge)
+  );
 }
 
 /**

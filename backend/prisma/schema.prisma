@@ -214,9 +214,6 @@ model RefreshToken {
   isRevoked Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  // Token family tracking 
-  familyId String?
-
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -225,7 +222,6 @@ model RefreshToken {
   @@index([expiresAt])
   @@index([isRevoked]) 
   @@index([isRevoked, expiresAt]) 
-  @@index([familyId])
   @@map("refresh_tokens")
 }
 

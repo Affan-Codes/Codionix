@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 import { env } from '../config/env.js';
 
 const COOKIE_NAMES = {
@@ -40,11 +40,14 @@ export function setAccessTokenCookie(res: Response, accessToken: string): void {
 }
 
 /**
- * Set both tokens at once
+ * Set both auth cookies at once
  */
 export function setAuthCookies(
   res: Response,
-  tokens: { accessToken: string; refreshToken: string }
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+  }
 ): void {
   setAccessTokenCookie(res, tokens.accessToken);
   setRefreshTokenCookie(res, tokens.refreshToken);
@@ -69,17 +72,13 @@ export function clearAuthCookies(res: Response): void {
 /**
  * Get refresh token from signed cookies
  */
-export function getRefreshTokenFromCookies(
-  signedCookies: Record<string, string>
-): string | null {
-  return signedCookies[COOKIE_NAMES.REFRESH_TOKEN] || null;
+export function getRefreshTokenFromCookies(req: Request): string | null {
+  return req.signedCookies?.[COOKIE_NAMES.REFRESH_TOKEN] || null;
 }
 
 /**
  * Get access token from signed cookies
  */
-export function getAccessTokenFromCookies(
-  signedCookies: Record<string, string>
-): string | null {
-  return signedCookies[COOKIE_NAMES.ACCESS_TOKEN] || null;
+export function getAccessTokenFromCookies(req: Request): string | null {
+  return req.signedCookies?.[COOKIE_NAMES.ACCESS_TOKEN] || null;
 }

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
-import { AppError } from '../utils/errors.js';
+import { AppError, UnauthorizedError } from '../utils/errors.js';
 import { ApiResponse } from '../utils/apiResponse.js';
 import { ZodError } from 'zod';
 import { Prisma } from '../generated/prisma/client.js';
@@ -12,12 +12,10 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  // Generate unique error ID for this specific error instance
   const errorId = randomUUID();
   const correlationId = req.correlationId || 'unknown';
   const duration = req.startTime ? Date.now() - req.startTime : 0;
 
-  // Build error context
   const errorContext = {
     errorId,
     correlationId,
@@ -33,8 +31,121 @@ export const errorHandler = (
     stack: err.stack,
   };
 
-  // Log error with full context
   logger.error(`Error: ${err.message}`, errorContext);
+
+  // Token errors
+  if (err instanceof UnauthorizedError) {
+    const message = err.message.toLowerCase();
+
+    // Token theft detection
+    if (message.includes('reuse') || message.includes('theft')) {
+      logger.error('🚨 TOKEN THEFT DETECTED', {
+        ...errorContext,
+        severity: 'critical',
+        category: 'security',
+        threat: 'token_theft',
+      });
+
+      ApiResponse.error(
+        res,
+        'Token reuse detected. All your sessions have been invalidated for security. Please log in again.',
+        401,
+        'TOKEN_THEFT_DETECTED',
+        {
+          errorId,
+          correlationId,
+          action: 'all_sessions_revoked',
+          recommendation:
+            'Change your password immediately if you did not trigger this.',
+        }
+      );
+      return;
+    }
+
+    // Token expiration
+    if (message.includes('expired')) {
+      ApiResponse.error(
+        res,
+        'Your session has expired. Please log in again.',
+        401,
+        'TOKEN_EXPIRED',
+        {
+          errorId,
+          correlationId,
+          action: 'reauthenticate',
+        }
+      );
+      return;
+    }
+
+    // Token revocation
+    if (message.includes('revoked')) {
+      ApiResponse.error(
+        res,
+        'This session has been revoked. Please log in again.',
+        401,
+        'TOKEN_REVOKED',
+        {
+          errorId,
+          correlationId,
+          action: 'reauthenticate',
+        }
+      );
+      return;
+    }
+
+    // CSRF validation failure
+    if (message.includes('csrf')) {
+      logger.warn('CSRF validation failed', {
+        ...errorContext,
+        category: 'security',
+        threat: 'csrf_attack',
+      });
+
+      ApiResponse.error(
+        res,
+        'Invalid security token. Please refresh the page and try again.',
+        401,
+        'CSRF_VALIDATION_FAILED',
+        {
+          errorId,
+          correlationId,
+          action: 'refresh_page',
+        }
+      );
+      return;
+    }
+
+    // PKCE validation failure (OAuth)
+    if (message.includes('pkce')) {
+      logger.error('PKCE validation failed - possible attack', {
+        ...errorContext,
+        severity: 'high',
+        category: 'security',
+        threat: 'oauth_pkce_attack',
+      });
+
+      ApiResponse.error(
+        res,
+        'OAuth security validation failed. Please try signing in again.',
+        401,
+        'PKCE_VALIDATION_FAILED',
+        {
+          errorId,
+          correlationId,
+          action: 'retry_oauth',
+        }
+      );
+      return;
+    }
+
+    // Generic unauthorized
+    ApiResponse.error(res, err.message, 401, 'UNAUTHORIZED', {
+      errorId,
+      correlationId,
+    });
+    return;
+  }
 
   // Handle known AppError
   if (err instanceof AppError) {
@@ -42,22 +153,6 @@ export const errorHandler = (
       errorId,
       correlationId,
     });
-    return;
-  }
-
-  // Handle Zod validation errors
-  if (err instanceof ZodError) {
-    const details = err.issues.map((issue) => ({
-      field: issue.path.join('.'),
-      message: issue.message,
-    }));
-    ApiResponse.error(
-      res,
-      'Validation failed',
-      400,
-      'VALIDATION_ERROR',
-      details
-    );
     return;
   }
 
@@ -85,7 +180,6 @@ export const errorHandler = (
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case 'P2002':
-        // Unique constraint violation
         const field = err.meta?.target as string[];
         logger.warn('Database constraint violation', {
           ...errorContext,
@@ -102,7 +196,6 @@ export const errorHandler = (
         return;
 
       case 'P2025':
-        // Record not found
         logger.warn('Database record not found', errorContext);
         ApiResponse.error(res, 'Record not found', 404, 'NOT_FOUND', {
           errorId,
@@ -111,7 +204,6 @@ export const errorHandler = (
         return;
 
       case 'P2024':
-        // Connection pool timeout
         logger.error('Database pool timeout', {
           ...errorContext,
           prismaCode: err.code,

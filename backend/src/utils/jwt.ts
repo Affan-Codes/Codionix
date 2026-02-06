@@ -1,24 +1,42 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { UnauthorizedError } from './errors.js';
+import crypto from 'crypto';
 
 export interface JwtPayload {
   userId: string;
   email: string;
   role: string;
+  jti: string;
+  tokenVersion?: number;
 }
 
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
+  refreshTokenId: string;
+}
+
+/**
+ * Generate unique JWT ID
+ */
+function generateJti(): string {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 /**
  * Generate access token (short-lived)
  */
-export const generateAccessToken = (payload: JwtPayload): string => {
+export const generateAccessToken = (
+  payload: Omit<JwtPayload, 'jti'>
+): string => {
+  const tokenPayload: JwtPayload = {
+    ...payload,
+    jti: generateJti(),
+  };
+
   // @ts-ignore - jsonwebtoken types have issues with newer TypeScript
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
+  return jwt.sign(tokenPayload, env.JWT_ACCESS_SECRET, {
     expiresIn: env.JWT_ACCESS_EXPIRY,
   });
 };
@@ -26,20 +44,40 @@ export const generateAccessToken = (payload: JwtPayload): string => {
 /**
  * Generate refresh token (long-lived)
  */
-export const generateRefreshToken = (payload: JwtPayload): string => {
+export const generateRefreshToken = (
+  payload: Omit<JwtPayload, 'jti'>,
+  tokenVersion: number = 1
+): { token: string; jti: string } => {
+  const jti = generateJti();
+
+  const tokenPayload: JwtPayload = {
+    ...payload,
+    jti,
+    tokenVersion,
+  };
+
   // @ts-ignore - jsonwebtoken types have issues with newer TypeScript
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+  const token = jwt.sign(tokenPayload, env.JWT_REFRESH_SECRET, {
     expiresIn: env.JWT_REFRESH_EXPIRY,
   });
+
+  return { token, jti };
 };
 
 /**
  * Generate both access and refresh tokens
  */
-export const generateTokenPair = (payload: JwtPayload): TokenPair => {
+export const generateTokenPair = (
+  payload: Omit<JwtPayload, 'jti' | 'tokenVersion'>,
+  tokenVersion: number = 1
+): TokenPair => {
+  const accessToken = generateAccessToken(payload);
+  const refreshTokenData = generateRefreshToken(payload, tokenVersion);
+
   return {
-    accessToken: generateAccessToken(payload),
-    refreshToken: generateRefreshToken(payload),
+    accessToken,
+    refreshToken: refreshTokenData.token,
+    refreshTokenId: refreshTokenData.jti,
   };
 };
 

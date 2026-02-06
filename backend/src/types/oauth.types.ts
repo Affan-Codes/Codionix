@@ -21,6 +21,7 @@ export interface OAuthLoginState {
   createdAt: number;
   expiresAt: number;
   nonce: string;
+  codeVerifier: string;
 }
 
 export interface OAuthRegisterState {
@@ -30,6 +31,7 @@ export interface OAuthRegisterState {
   createdAt: number;
   expiresAt: number;
   nonce: string;
+  codeVerifier: string;
 }
 
 export type OAuthState = OAuthLoginState | OAuthRegisterState;

@@ -3,8 +3,6 @@ import { validateBody } from '../middleware/validate.js';
 import {
   forgotPasswordSchema,
   loginSchema,
-  logoutSchema,
-  refreshTokenSchema,
   registerSchema,
   resendVerificationSchema,
   resetPasswordSchema,
@@ -14,6 +12,7 @@ import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import rateLimit from 'express-rate-limit';
 import oauthRoutes from './oauth.routes.js';
+import { csrfProtection } from '../middleware/csrf.middleware.js';
 
 const router = Router();
 
@@ -23,10 +22,6 @@ const router = Router();
 
 /**
  * Strict rate limiting for email verification endpoints
- * CRITICAL: Prevents email spam and token brute force
- *
- * Limit: 3 attempts per 15 minutes
- * Reason: Verification emails are expensive (SMTP cost + abuse risk)
  */
 const verificationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -61,6 +56,26 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 refreshes per 15 minutes (2 per minute average)
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many token refresh attempts. Please try again later.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const cookieFingerprint = req.signedCookies?.refresh_token
+      ? req.signedCookies.refresh_token.substring(0, 16)
+      : 'anonymous';
+    return `${req.ip}:${cookieFingerprint}`;
+  },
+});
+
 // ===================================
 // OAUTH ROUTES (MOUNTED FIRST)
 // ===================================
@@ -79,6 +94,7 @@ router.use(oauthRoutes);
  * @route   POST /api/v1/auth/register
  * @desc    Register new user (sends verification email)
  * @access  Public
+ * @csrf    Not required (no prior session exists)
  */
 router.post(
   '/register',
@@ -91,6 +107,7 @@ router.post(
  * @route   POST /api/v1/auth/login
  * @desc    Login user
  * @access  Public
+ * @csrf    Not required (no prior session exists)
  */
 router.post(
   '/login',
@@ -103,6 +120,7 @@ router.post(
  * @route   POST /api/v1/auth/verify-email
  * @desc    Verify email with token
  * @access  Public
+ * @csrf    Not required (token-based verification)
  */
 router.post(
   '/verify-email',
@@ -115,6 +133,7 @@ router.post(
  * @route   POST /api/v1/auth/resend-verification
  * @desc    Resend verification email
  * @access  Public
+ * @csrf    Not required (email-based flow)
  */
 router.post(
   '/resend-verification',
@@ -126,25 +145,29 @@ router.post(
 /**
  * @route   POST /api/v1/auth/refresh
  * @desc    Refresh access token
- * @access  Public
+ * @access  Public (but requires valid refresh token in cookie)
+ * @csrf    Protected (prevents CSRF-based token theft)
  */
 router.post(
   '/refresh',
-  validateBody(refreshTokenSchema),
+  refreshLimiter,
+  csrfProtection,
   authController.refreshToken
 );
 
 /**
  * @route   POST /api/v1/auth/logout
  * @desc    Logout user (revoke refresh token)
- * @access  Public
+ * @access  Public (but requires refresh token in cookie)
+ * @csrf    Protected (prevents CSRF-based logout attacks)
  */
-router.post('/logout', validateBody(logoutSchema), authController.logout);
+router.post('/logout', csrfProtection, authController.logout);
 
 /**
  * @route   POST /api/v1/auth/forgot-password
  * @desc    Send password reset email
  * @access  Public
+ * @csrf    Not required (email-based flow)
  */
 router.post(
   '/forgot-password',
@@ -157,6 +180,7 @@ router.post(
  * @route   POST /api/v1/auth/reset-password
  * @desc    Reset password with token
  * @access  Public
+ * @csrf    Not required (token-based reset)
  */
 router.post(
   '/reset-password',
@@ -173,6 +197,7 @@ router.post(
  * @route   GET /api/v1/auth/me
  * @desc    Get current authenticated user
  * @access  Protected
+ * @csrf    Not required (read-only operation)
  */
 router.get('/me', authenticate, authController.getCurrentUser);
 

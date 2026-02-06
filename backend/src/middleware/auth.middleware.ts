@@ -2,6 +2,9 @@ import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError } from '../utils/errors.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { prisma } from '../config/database.js';
+import { getAccessTokenFromCookies } from '../utils/cookieUtils.js';
+import { logger } from '../utils/logger.js';
+import { isTokenRevoked } from '../services/tokenRevocation.service.js';
 
 /**
  * Authenticate user via JWT token
@@ -12,31 +15,62 @@ export const authenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Get token from Authorization header
-    const authHeader = req.headers.authorization;
     let token: string | null = null;
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    } else {
-      // Fall back to cookie (web browser clients)
-      token = req.signedCookies?.access_token || null;
+    token = getAccessTokenFromCookies(req);
+
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
     if (!token) {
-      throw new UnauthorizedError('No token provided');
+      logger.debug('Authentication failed: No token provided', {
+        path: req.path,
+        method: req.method,
+        hasCookie: !!req.signedCookies?.access_token,
+        hasAuthHeader: !!req.headers.authorization,
+        operation: 'auth.authenticate',
+      });
+
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Verify token
     const payload = verifyAccessToken(token);
 
+    // Check if token is revoked (jti lookup)
+    if (payload.jti) {
+      const revoked = await isTokenRevoked(payload.jti);
+      if (revoked) {
+        logger.warn('Revoked token used', {
+          userId: payload.userId,
+          jti: payload.jti,
+          path: req.path,
+          operation: 'auth.authenticate',
+          severity: 'medium',
+        });
+
+        throw new UnauthorizedError(
+          'Token has been revoked. Please log in again.'
+        );
+      }
+    }
+
     // Verify user still exists in database
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, email: true, role: true },
+      select: { id: true, email: true, role: true, isEmailVerified: true },
     });
 
     if (!user) {
+      logger.error('Token for non-existent user', {
+        userId: payload.userId,
+        operation: 'auth.authenticate',
+      });
+
       throw new UnauthorizedError('User not found');
     }
 
@@ -46,6 +80,14 @@ export const authenticate = async (
       email: user.email,
       role: user.role,
     };
+
+    logger.debug('Authentication successful', {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      path: req.path,
+      operation: 'auth.authenticate',
+    });
 
     next();
   } catch (error) {
@@ -81,6 +123,12 @@ export const requireVerifiedEmail = async (
     }
 
     if (!user.isEmailVerified) {
+      logger.warn('Unverified email access attempt', {
+        userId: req.user.userId,
+        path: req.path,
+        operation: 'auth.requireVerifiedEmail',
+      });
+
       throw new UnauthorizedError(
         'Email verification required. Please check your email for verification link.'
       );
@@ -101,24 +149,49 @@ export const optionalAuthenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const authHeader = req.headers.authorization;
+    let token: string | null = null;
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      const payload = verifyAccessToken(token);
+    // Try cookie first
+    token = getAccessTokenFromCookies(req);
 
-      const user = await prisma.user.findUnique({
-        where: { id: payload.userId },
-        select: { id: true, email: true, role: true },
-      });
-
-      if (user) {
-        req.user = {
-          userId: user.id,
-          email: user.email,
-          role: user.role,
-        };
+    // Fallback to header
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
       }
+    }
+
+    // No token = continue without user
+    if (!token) {
+      next();
+      return;
+    }
+
+    // Verify token
+    const payload = verifyAccessToken(token);
+
+    // Check revocation
+    if (payload.jti) {
+      const revoked = await isTokenRevoked(payload.jti);
+      if (revoked) {
+        // Silently skip - don't attach user
+        next();
+        return;
+      }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, email: true, role: true },
+    });
+
+    if (user) {
+      req.user = {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      };
     }
 
     next();

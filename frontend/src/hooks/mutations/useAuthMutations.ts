@@ -2,7 +2,6 @@ import type { LoginCredentials, RegisterData } from "@/types";
 import { useMutationFactory } from "../useMutationFactory";
 import { authApi } from "@/api/auth.api";
 import { queryKeys } from "@/utils/queryKeys";
-import { getRefreshToken } from "@/utils/tokenManager";
 
 /**
  * Login mutation with OAuth-specific error handling
@@ -84,14 +83,7 @@ export function useRegister() {
  */
 export function useLogout() {
   return useMutationFactory({
-    mutationFn: () => {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        throw new Error("No refresh token found");
-      }
-      return authApi.logout(refreshToken);
-    },
-
+    mutationFn: () => authApi.logout(),
     successMessage: "Logged out successfully",
 
     // Clear all auth data on success (handled in AuthContext)
