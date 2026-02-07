@@ -8,13 +8,20 @@ export interface JwtPayload {
   email: string;
   role: string;
   jti: string;
+  fingerprint?: string;
   tokenVersion?: number;
 }
 
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;
-  refreshTokenId: string;
+  refreshTokenJti: string;
+}
+
+export interface DeviceFingerprint {
+  ipHash: string;
+  userAgentHash: string;
+  combined: string;
 }
 
 /**
@@ -25,14 +32,51 @@ function generateJti(): string {
 }
 
 /**
+ * Create device fingerprint from request metadata
+ * Used to bind tokens to specific devices
+ */
+export function createDeviceFingerprint(
+  ip: string,
+  userAgent: string
+): DeviceFingerprint {
+  const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+  const uaHash = crypto.createHash('sha256').update(userAgent).digest('hex');
+  const combined = crypto
+    .createHash('sha256')
+    .update(ipHash + uaHash)
+    .digest('hex');
+
+  return {
+    ipHash,
+    userAgentHash: uaHash,
+    combined,
+  };
+}
+
+/**
+ * Verify device fingerprint matches token
+ */
+export function verifyDeviceFingerprint(
+  tokenFingerprint: string,
+  currentFingerprint: DeviceFingerprint
+): boolean {
+  return crypto.timingSafeEqual(
+    Buffer.from(tokenFingerprint),
+    Buffer.from(currentFingerprint.combined)
+  );
+}
+
+/**
  * Generate access token (short-lived)
  */
 export const generateAccessToken = (
-  payload: Omit<JwtPayload, 'jti'>
+  payload: Omit<JwtPayload, 'jti'>,
+  fingerprint?: DeviceFingerprint
 ): string => {
   const tokenPayload: JwtPayload = {
     ...payload,
     jti: generateJti(),
+    ...(fingerprint && { fingerprint: fingerprint.combined }),
   };
 
   // @ts-ignore - jsonwebtoken types have issues with newer TypeScript
@@ -46,6 +90,7 @@ export const generateAccessToken = (
  */
 export const generateRefreshToken = (
   payload: Omit<JwtPayload, 'jti'>,
+  fingerprint?: DeviceFingerprint,
   tokenVersion: number = 1
 ): { token: string; jti: string } => {
   const jti = generateJti();
@@ -54,6 +99,7 @@ export const generateRefreshToken = (
     ...payload,
     jti,
     tokenVersion,
+    ...(fingerprint && { fingerprint: fingerprint.combined }),
   };
 
   // @ts-ignore - jsonwebtoken types have issues with newer TypeScript
@@ -68,16 +114,21 @@ export const generateRefreshToken = (
  * Generate both access and refresh tokens
  */
 export const generateTokenPair = (
-  payload: Omit<JwtPayload, 'jti' | 'tokenVersion'>,
+  payload: Omit<JwtPayload, 'jti' | 'tokenVersion' | 'fingerprint'>,
+  fingerprint?: DeviceFingerprint,
   tokenVersion: number = 1
 ): TokenPair => {
-  const accessToken = generateAccessToken(payload);
-  const refreshTokenData = generateRefreshToken(payload, tokenVersion);
+  const accessToken = generateAccessToken(payload, fingerprint);
+  const refreshTokenData = generateRefreshToken(
+    payload,
+    fingerprint,
+    tokenVersion
+  );
 
   return {
     accessToken,
     refreshToken: refreshTokenData.token,
-    refreshTokenId: refreshTokenData.jti,
+    refreshTokenJti: refreshTokenData.jti,
   };
 };
 

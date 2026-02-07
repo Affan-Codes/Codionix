@@ -47,14 +47,9 @@ export const authApi = {
   },
 
   // Refresh access token
-  refreshToken: async (): Promise<{
-    accessToken: string;
-    refreshToken: string;
-  }> => {
+  refreshToken: async (): Promise<{ message: string }> => {
     const response =
-      await apiClient.post<
-        ApiResponse<{ accessToken: string; refreshToken: string }>
-      >("/auth/refresh");
+      await apiClient.post<ApiResponse<{ message: string }>>("/auth/refresh");
     return response.data.data!;
   },
 

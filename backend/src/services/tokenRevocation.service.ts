@@ -7,7 +7,7 @@ import { logger } from '../utils/logger.js';
 export async function isTokenRevoked(jti: string): Promise<boolean> {
   try {
     const token = await prisma.refreshToken.findUnique({
-      where: { token: jti },
+      where: { jti },
       select: { isRevoked: true, expiresAt: true },
     });
 
@@ -41,7 +41,7 @@ export async function isTokenRevoked(jti: string): Promise<boolean> {
 export async function revokeToken(jti: string): Promise<void> {
   try {
     await prisma.refreshToken.updateMany({
-      where: { token: jti },
+      where: { jti },
       data: { isRevoked: true },
     });
 
@@ -92,7 +92,7 @@ export async function detectTokenReuse(
 ): Promise<boolean> {
   try {
     const token = await prisma.refreshToken.findUnique({
-      where: { token: jti },
+      where: { jti },
       select: { isRevoked: true, userId: true },
     });
 
@@ -158,5 +158,39 @@ export async function cleanupExpiredTokens(): Promise<number> {
       operation: 'token.cleanup',
     });
     throw error;
+  }
+}
+
+/**
+ * Verify device fingerprint matches stored fingerprint
+ * Returns true if match OR if no fingerprint stored (backward compat)
+ */
+export async function verifyTokenFingerprint(
+  jti: string,
+  currentFingerprint: string
+): Promise<boolean> {
+  try {
+    const token = await prisma.refreshToken.findUnique({
+      where: { jti },
+      select: { fingerprint: true },
+    });
+
+    if (!token) {
+      return false; // Token doesn't exist
+    }
+
+    // If no fingerprint stored (old tokens), allow (backward compat)
+    if (!token.fingerprint) {
+      return true;
+    }
+
+    // Compare fingerprints (constant-time)
+    return token.fingerprint === currentFingerprint;
+  } catch (error) {
+    logger.error('Failed to verify token fingerprint', {
+      error: error instanceof Error ? error.message : 'Unknown',
+      jti,
+    });
+    return false;
   }
 }

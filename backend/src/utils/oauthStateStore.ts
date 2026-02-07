@@ -1,29 +1,27 @@
-import { getRedisClient } from '../config/redis.js';
 import { env } from '../config/env.js';
 import { logger } from './logger.js';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import type { OAuthRegisterState, OAuthState } from '../types/oauth.types.js';
 
-const redis = getRedisClient();
-const STATE_PREFIX = `${env.REDIS_PREFIX}:oauth:state`;
-const STATE_TTL_SECONDS = Math.floor(env.OAUTH_STATE_EXPIRY_MS / 1000);
+const STATE_EXPIRY_SECONDS = Math.floor(env.OAUTH_STATE_EXPIRY_MS / 1000);
+const STATE_SECRET = env.JWT_REFRESH_SECRET;
 
 /**
- * Generate cryptographically secure state token
+ * Generate cryptographically secure nonce
  */
-export function generateStateToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+export function generateNonce(): string {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 /**
- * Store OAuth state in Redis with TTL
+ *  Create signed JWT containing OAuth state
  */
 export async function storeOAuthState(
   state: Omit<OAuthState, 'createdAt' | 'expiresAt' | 'nonce'>
 ): Promise<string> {
-  const token = generateStateToken();
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const now = Date.now();
+  const nonce = generateNonce();
+  const now = Math.floor(Date.now() / 1000); // Unix timestamp
 
   let fullState: OAuthState;
 
@@ -33,8 +31,8 @@ export async function storeOAuthState(
       flow: 'login',
       nonce,
       codeVerifier: state.codeVerifier,
-      createdAt: now,
-      expiresAt: now + env.OAUTH_STATE_EXPIRY_MS,
+      createdAt: now * 1000,
+      expiresAt: now * 1000 + env.OAUTH_STATE_EXPIRY_MS,
     };
   } else {
     const registerState = state as Omit<
@@ -48,122 +46,92 @@ export async function storeOAuthState(
       role: registerState.role,
       nonce,
       codeVerifier: registerState.codeVerifier,
-      createdAt: now,
-      expiresAt: now + env.OAUTH_STATE_EXPIRY_MS,
+      createdAt: now * 1000,
+      expiresAt: now * 1000 + env.OAUTH_STATE_EXPIRY_MS,
     };
   }
 
-  const key = `${STATE_PREFIX}:${token}`;
-
   try {
-    // Store with automatic expiration
-    await redis.setex(key, STATE_TTL_SECONDS, JSON.stringify(fullState));
+    // Sign state as JWT
+    const token = jwt.sign(fullState, STATE_SECRET, {
+      expiresIn: STATE_EXPIRY_SECONDS,
+      issuer: 'codionix-oauth',
+      audience: 'oauth-callback',
+    });
 
-    logger.debug('OAuth state stored in Redis', {
-      token: token.substring(0, 8) + '...',
+    logger.debug('OAuth state created (stateless)', {
       provider: state.provider,
       flow: state.flow,
       hasPkceVerifier: !!state.codeVerifier,
-      ttl: `${STATE_TTL_SECONDS}s`,
+      ttl: `${STATE_EXPIRY_SECONDS}s`,
       operation: 'oauth.storeState',
     });
 
     return token;
   } catch (error) {
-    logger.error('Failed to store OAuth state in Redis', {
+    logger.error('Failed to create OAuth state JWT', {
       error: error instanceof Error ? error.message : 'Unknown',
       operation: 'oauth.storeState',
     });
-    throw new Error('Failed to store OAuth state');
+    throw new Error('Failed to create OAuth state');
   }
 }
 
 /**
- * Retrieve and delete OAuth state (single-use)
+ * Verify and decode OAuth state from JWT
  */
 export async function consumeOAuthState(
   token: string
 ): Promise<OAuthState | null> {
-  const key = `${STATE_PREFIX}:${token}`;
-
   try {
-    // Get and delete atomically
-    const data = await redis.getdel(key);
+    // Verify JWT signature and expiration
+    const decoded = jwt.verify(token, STATE_SECRET, {
+      issuer: 'codionix-oauth',
+      audience: 'oauth-callback',
+    }) as OAuthState;
 
-    if (!data) {
-      logger.warn('OAuth state not found in Redis', {
-        token: token.substring(0, 8) + '...',
-        operation: 'oauth.consumeState',
-        outcome: 'not_found',
-      });
-      return null;
-    }
-
-    const state: OAuthState = JSON.parse(data);
-
-    // Double-check expiration (Redis TTL should handle this, but defense in depth)
-    if (state.expiresAt < Date.now()) {
-      logger.warn('OAuth state expired', {
-        token: token.substring(0, 8) + '...',
-        provider: state.provider,
-        ageMs: Date.now() - state.createdAt,
+    // Double-check expiration (defense in depth)
+    if (decoded.expiresAt < Date.now()) {
+      logger.warn('OAuth state expired (timestamp check)', {
+        provider: decoded.provider,
+        ageMs: Date.now() - decoded.createdAt,
         operation: 'oauth.consumeState',
         outcome: 'expired',
       });
       return null;
     }
 
-    logger.debug('OAuth state consumed from Redis', {
-      token: token.substring(0, 8) + '...',
-      provider: state.provider,
-      flow: state.flow,
-      hasPkceVerifier: !!state.codeVerifier,
-      ageMs: Date.now() - state.createdAt,
+    logger.debug('OAuth state consumed (stateless)', {
+      provider: decoded.provider,
+      flow: decoded.flow,
+      hasPkceVerifier: !!decoded.codeVerifier,
+      ageMs: Date.now() - decoded.createdAt,
       operation: 'oauth.consumeState',
     });
 
-    return state;
+    return decoded;
   } catch (error) {
-    logger.error('Failed to consume OAuth state from Redis', {
+    if (error instanceof jwt.TokenExpiredError) {
+      logger.warn('OAuth state JWT expired', {
+        operation: 'oauth.consumeState',
+        outcome: 'expired',
+      });
+      return null;
+    }
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      logger.warn('Invalid OAuth state JWT', {
+        error: error.message,
+        operation: 'oauth.consumeState',
+        outcome: 'invalid',
+      });
+      return null;
+    }
+
+    logger.error('Failed to verify OAuth state JWT', {
       error: error instanceof Error ? error.message : 'Unknown',
       operation: 'oauth.consumeState',
     });
     return null;
-  }
-}
-
-/**
- * Get current store size (for monitoring)
- */
-export async function getStoreSize(): Promise<number> {
-  try {
-    const keys = await redis.keys(`${STATE_PREFIX}:*`);
-    return keys.length;
-  } catch {
-    return -1;
-  }
-}
-
-/**
- * Clear all states (for testing/maintenance only)
- */
-export async function clearAllStates(): Promise<number> {
-  try {
-    const keys = await redis.keys(`${STATE_PREFIX}:*`);
-    if (keys.length === 0) return 0;
-
-    const deleted = await redis.del(...keys);
-
-    logger.info('OAuth state store cleared', {
-      cleared: deleted,
-      operation: 'oauth.clearStore',
-    });
-
-    return deleted;
-  } catch (error) {
-    logger.error('Failed to clear OAuth states', {
-      error: error instanceof Error ? error.message : 'Unknown',
-    });
-    return 0;
   }
 }

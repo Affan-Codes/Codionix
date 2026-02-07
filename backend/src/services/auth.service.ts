@@ -8,6 +8,7 @@ import {
 import {
   generateTokenPair,
   verifyRefreshToken,
+  type DeviceFingerprint,
   type TokenPair,
 } from '../utils/jwt.js';
 import { logger, trackOperation } from '../utils/logger.js';
@@ -30,6 +31,7 @@ import {
   detectTokenReuse,
   isTokenRevoked,
   revokeToken,
+  verifyTokenFingerprint,
 } from './tokenRevocation.service.js';
 
 // ===================================
@@ -64,7 +66,10 @@ const generateSecureToken = (): string => {
 /**
  * Register a new user
  */
-export const register = async (data: RegisterInput): Promise<AuthResponse> => {
+export const register = async (
+  data: RegisterInput,
+  fingerprint?: DeviceFingerprint
+): Promise<AuthResponse> => {
   const tracker = trackOperation('auth.register', undefined, {
     email: data.email,
     role: data.role,
@@ -95,7 +100,7 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
     const verificationExpiry = new Date();
     verificationExpiry.setHours(verificationExpiry.getHours() + 24); // 24 hours
 
-    // Atomic transaction for user + refresh token
+    // Atomic transaction
     const result = await prisma.$transaction(async (tx) => {
       // Create User
       const user = await tx.user.create({
@@ -120,21 +125,25 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
         },
       });
 
-      // Generate token pair
-      const tokens = generateTokenPair({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
+      // Generate token pair with device fingerprint
+      const tokens = generateTokenPair(
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+        },
+        fingerprint
+      );
 
-      // Store refresh token in DB
+      // Store refresh token (JTI only) with fingerprint
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
       await tx.refreshToken.create({
         data: {
           userId: user.id,
-          token: tokens.refreshTokenId,
+          jti: tokens.refreshTokenJti,
+          fingerprint: fingerprint?.combined || null,
           expiresAt,
           isRevoked: false,
         },
@@ -143,7 +152,7 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
       return { user, tokens };
     });
 
-    // Send verification email using new notification system
+    // Send verification email (after transaction commits)
     sendEmailVerificationNotification(result.user.email, verificationToken);
 
     tracker.success({
@@ -166,7 +175,10 @@ export const register = async (data: RegisterInput): Promise<AuthResponse> => {
 /**
  * Login user
  */
-export const login = async (data: LoginInput): Promise<AuthResponse> => {
+export const login = async (
+  data: LoginInput,
+  fingerprint?: DeviceFingerprint
+): Promise<AuthResponse> => {
   const tracker = trackOperation('auth.login', undefined, {
     email: data.email,
   });
@@ -231,24 +243,33 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    // Generate tokens
-    const tokens = generateTokenPair({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    // Atomic transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Generate tokens with device fingerprint
+      const tokens = generateTokenPair(
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+        },
+        fingerprint
+      );
 
-    // Store refresh token
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+      // Store refresh token (JTI only) with fingerprint
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: tokens.refreshTokenId,
-        expiresAt,
-        isRevoked: false,
-      },
+      await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          jti: tokens.refreshTokenJti,
+          fingerprint: fingerprint?.combined || null,
+          expiresAt,
+          isRevoked: false,
+        },
+      });
+
+      return tokens;
     });
 
     const { passwordHash, ...userWithoutPassword } = user;
@@ -260,7 +281,7 @@ export const login = async (data: LoginInput): Promise<AuthResponse> => {
       emailVerified: user.isEmailVerified,
     });
 
-    return { user: userWithoutPassword, tokens };
+    return { user: userWithoutPassword, tokens: result };
   } catch (error) {
     tracker.failure(error, {
       email: data.email,
@@ -387,18 +408,13 @@ export const resendVerificationEmail = async (
       },
     });
 
-    // Send verification email using new notification system
+    // Send verification email
     sendEmailVerificationNotification(user.email, verificationToken);
 
     tracker.success({
       userId: user.id,
       email: user.email,
       verificationEmailQueued: true,
-    });
-
-    tracker.success({
-      userId: user.id,
-      email: user.email,
     });
 
     return {
@@ -413,7 +429,10 @@ export const resendVerificationEmail = async (
 /**
  * Refresh access token
  */
-export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
+export const refreshAccessToken = async (
+  token: string,
+  fingerprint?: DeviceFingerprint
+): Promise<TokenPair> => {
   const tracker = trackOperation('auth.refreshToken');
 
   try {
@@ -449,6 +468,30 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
       throw new UnauthorizedError('Refresh token has been revoked');
     }
 
+    // Verify device fingerprint
+    if (fingerprint && payload.fingerprint) {
+      const fingerprintValid = await verifyTokenFingerprint(
+        payload.jti,
+        fingerprint.combined
+      );
+
+      if (!fingerprintValid) {
+        logger.error(
+          'Token fingerprint mismatch - possible session hijacking',
+          {
+            userId: payload.userId,
+            jti: payload.jti,
+            operation: 'auth.refreshToken',
+            severity: 'high',
+          }
+        );
+
+        throw new UnauthorizedError(
+          'Device fingerprint mismatch. Please log in again.'
+        );
+      }
+    }
+
     // Verify user exists
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
@@ -464,28 +507,33 @@ export const refreshAccessToken = async (token: string): Promise<TokenPair> => {
       throw new NotFoundError('User not found');
     }
 
+    // ATOMIC TOKEN ROTATION
     const result = await prisma.$transaction(async (tx) => {
       // Revoke old token
       await tx.refreshToken.updateMany({
-        where: { token: payload.jti },
+        where: { jti: payload.jti },
         data: { isRevoked: true },
       });
 
       // Generate new tokens
-      const newTokens = generateTokenPair({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
+      const newTokens = generateTokenPair(
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+        },
+        fingerprint
+      );
 
-      // Store new refresh token
+      // Store new refresh token (JTI only) with fingerprint
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
       await tx.refreshToken.create({
         data: {
           userId: user.id,
-          token: newTokens.refreshTokenId,
+          jti: newTokens.refreshTokenJti,
+          fingerprint: fingerprint?.combined || null,
           expiresAt,
           isRevoked: false,
         },

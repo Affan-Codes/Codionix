@@ -207,21 +207,23 @@ model Message {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
-  isRevoked Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  jti         String   @unique
+  fingerprint String?
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([token])
+  @@index([jti])
   @@index([expiresAt])
-  @@index([isRevoked]) 
-  @@index([isRevoked, expiresAt]) 
+  @@index([isRevoked])
+  @@index([isRevoked, expiresAt])
+  @@index([userId, isRevoked])
   @@map("refresh_tokens")
 }
 

@@ -26,6 +26,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const queryClient = useQueryClient();
 
+  const loginMutation = useLogin();
+  const registerMutation = useRegister();
+  const logoutMutation = useLogoutMutation();
+
   const {
     data: currentUser,
     isLoading: isQueryLoading,
@@ -33,11 +37,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isFetching,
   } = useCurrentUser({
     retry: false, // Don't retry on auth errors
+    staleTime: 5 * 60 * 1000, // Consider fresh for 5 minutes
   });
-
-  const loginMutation = useLogin();
-  const registerMutation = useRegister();
-  const logoutMutation = useLogoutMutation();
 
   // Mark as initialized after first user fetch attempt
   useEffect(() => {

@@ -22,7 +22,6 @@ import {
   stopMetricsCollection,
 } from './services/metrics.service.js';
 import { startGrafanaAgent, stopGrafanaAgent } from './config/grafanaAgent.js';
-import { redis } from './config/redis.js';
 
 const PORT = env.PORT;
 
@@ -86,9 +85,6 @@ const startServer = async () => {
     // Connect to database with retry logic
     await db.connect();
 
-    // Redis connection
-    await redis.connect();
-
     // Start pool monitoring
     startPoolMonitoring();
 
@@ -126,7 +122,6 @@ const startServer = async () => {
         `✅ Metrics (Prometheus): http://localhost:${PORT}/api/v1/metrics/prometheus`
       );
       logger.info(`✅ Socket.io: ws://localhost:${PORT}`);
-      logger.info(`✅ Redis: Connected`);
     });
 
     // ===================================
@@ -183,9 +178,6 @@ const startServer = async () => {
         // Stop pool monitoring
         stopPoolMonitoring();
 
-        // Disconnect Redis
-        await redis.disconnect();
-
         // Disconnect database
         await db.disconnect();
 
@@ -220,18 +212,6 @@ const startServer = async () => {
 
         if (metricsInterval) {
           stopMetricsCollection(metricsInterval);
-        }
-
-        // Force disconnect Redis
-        try {
-          await redis.disconnect();
-        } catch (redisError) {
-          logger.error('Failed to disconnect Redis during error recovery', {
-            error:
-              redisError instanceof Error
-                ? redisError.message
-                : 'Unknown error',
-          });
         }
 
         try {

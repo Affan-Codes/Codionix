@@ -15,12 +15,22 @@ import {
   UnauthorizedError,
 } from '../utils/errors.js';
 import { issueCsrfToken } from '../middleware/csrf.middleware.js';
+import { createDeviceFingerprint } from '../utils/jwt.js';
 
 interface OAuthCallbackQuery {
   code?: string;
   state?: string;
   error?: string;
   error_description?: string;
+}
+
+/**
+ * Extract device fingerprint from request
+ */
+function getDeviceFingerprint(req: Request) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  return createDeviceFingerprint(ip, userAgent);
 }
 
 /**
@@ -90,11 +100,13 @@ export const googleCallback = asyncHandler(
     }
 
     try {
-      // Handle callback and get tokens
+      const fingerprint = getDeviceFingerprint(req);
+
       const { user, tokens } = await oauthService.handleOAuthCallback(
         'google',
         code,
-        state
+        state,
+        fingerprint
       );
 
       logger.info('Google OAuth callback successful', {
@@ -103,10 +115,7 @@ export const googleCallback = asyncHandler(
         operation: 'oauth.googleCallback',
       });
 
-      // Set httpOnly cookies
       setAuthCookies(res, tokens);
-
-      // Issue CSRF token for subsequent requests
       issueCsrfToken(res);
 
       // Redirect to frontend (cookies are already set)
@@ -162,11 +171,13 @@ export const githubCallback = asyncHandler(
     }
 
     try {
-      // Handle callback and get tokens
+      const fingerprint = getDeviceFingerprint(req);
+
       const { user, tokens } = await oauthService.handleOAuthCallback(
         'github',
         code,
-        state
+        state,
+        fingerprint
       );
 
       logger.info('GitHub OAuth callback successful', {
@@ -175,10 +186,8 @@ export const githubCallback = asyncHandler(
         operation: 'oauth.githubCallback',
       });
 
-      // Set httpOnly cookies
+     
       setAuthCookies(res, tokens);
-
-      // Issue CSRF token for subsequent requests
       issueCsrfToken(res);
 
       // Redirect to frontend (cookies are already set)

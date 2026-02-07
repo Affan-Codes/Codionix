@@ -1,9 +1,4 @@
 import { API_BASE_URL, API_TIMEOUT } from "@/constants";
-import {
-  getRefreshToken,
-  setRefreshToken,
-  clearAllAuthData,
-} from "@/utils/tokenManager";
 import axios, { type InternalAxiosRequestConfig } from "axios";
 
 // ===================================
@@ -27,6 +22,19 @@ const apiClient = axios.create({
   },
   withCredentials: true,
 });
+
+// ===================================
+// CSRF TOKEN MANAGEMENT
+// ===================================
+
+/**
+ * Get CSRF token from cookie
+ * Frontend reads this token and sends it in X-CSRF-Token header
+ */
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/csrf_token=([^;]+)/);
+  return match ? match[1] : null;
+}
 
 // ===================================
 // REFRESH TOKEN MANAGEMENT
@@ -58,6 +66,16 @@ const processQueue = (error: unknown, token: string | null = null) => {
 
 apiClient.interceptors.request.use(
   (config: CustomAxiosRequestConfig) => {
+    // Add CSRF token to non-GET requests
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(config.method?.toUpperCase() || "")
+    ) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) {
+        config.headers["X-CSRF-Token"] = csrfToken;
+      }
+    }
+
     return config;
   },
   (error) => {
@@ -162,30 +180,15 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = getRefreshToken();
-
-      if (!refreshToken) {
-        // No refresh token available, force logout
-        isRefreshing = false;
-        processQueue(new Error("No refresh token"), null);
-        clearAllAuthData();
-        window.location.href = "/login";
-        return Promise.reject(error);
-      }
-
       try {
         console.info("Refreshing access token...");
 
         // Call refresh endpoint - new cookies will be set automatically
         const { authApi } = await import("@/api/auth.api");
-        const tokens = await authApi.refreshToken(refreshToken);
-
-        // Update refresh token in sessionStorage
-        setRefreshToken(tokens.refreshToken);
+        await authApi.refreshToken();
 
         // Process queued requests
         processQueue(null, "cookie");
-
         isRefreshing = false;
 
         // Retry original request (new cookies already set)
@@ -194,17 +197,14 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         isRefreshing = false;
 
+        // If refresh failed with 401, force logout
         if (refreshError.response?.status === 401) {
-          clearAllAuthData();
           window.location.href = "/login";
           return Promise.reject(refreshError);
         }
 
-        // DO NOT force logout — keep old token, user can retry
-        if (
-          !refreshError.response || // Network error
-          refreshError.response?.status >= 500 // Server error
-        ) {
+        // Network/server error during refresh - keep old token, user can retry
+        if (!refreshError.response || refreshError.response?.status >= 500) {
           console.warn(
             "Token refresh failed due to network/server error. Keeping old token for retry.",
           );
@@ -218,8 +218,7 @@ apiClient.interceptors.response.use(
           });
         }
 
-        // Force logout as safety measure
-        clearAllAuthData();
+        // Other refresh errors - force logout
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }

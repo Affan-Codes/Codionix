@@ -19,6 +19,16 @@ import {
   clearCsrfToken,
   issueCsrfToken,
 } from '../middleware/csrf.middleware.js';
+import { createDeviceFingerprint } from '../utils/jwt.js';
+
+/**
+ * Extract device fingerprint from request
+ */
+function getDeviceFingerprint(req: Request) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  return createDeviceFingerprint(ip, userAgent);
+}
 
 /**
  * Register a new user
@@ -26,10 +36,13 @@ import {
  */
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const data: RegisterInput = req.body;
-  const result = await authService.register(data);
+  const fingerprint = getDeviceFingerprint(req);
+
+  const result = await authService.register(data, fingerprint);
 
   setAuthCookies(res, result.tokens);
   issueCsrfToken(res);
+
   ApiResponse.created(res, {
     user: result.user,
     message: 'Registration successful. Please verify your email.',
@@ -42,7 +55,9 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const data: LoginInput = req.body;
-  const result = await authService.login(data);
+  const fingerprint = getDeviceFingerprint(req);
+
+  const result = await authService.login(data, fingerprint);
 
   setAuthCookies(res, result.tokens);
   issueCsrfToken(res);
@@ -81,7 +96,6 @@ export const resendVerification = asyncHandler(
  */
 export const refreshToken = asyncHandler(
   async (req: Request, res: Response) => {
-    // Extract refresh token from signed cookie ONLY
     const refreshToken = getRefreshTokenFromCookies(req);
 
     if (!refreshToken) {
@@ -89,13 +103,14 @@ export const refreshToken = asyncHandler(
       return;
     }
 
-    // Perform token rotation (includes theft detection)
-    const tokens = await authService.refreshAccessToken(refreshToken);
+    const fingerprint = getDeviceFingerprint(req);
+    const tokens = await authService.refreshAccessToken(
+      refreshToken,
+      fingerprint
+    );
 
-    // Set new tokens in httpOnly cookies
     setAuthCookies(res, tokens);
 
-    // Return success (no tokens in body)
     ApiResponse.success(res, {
       message: 'Token refreshed successfully',
     });
@@ -109,17 +124,14 @@ export const refreshToken = asyncHandler(
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   const refreshToken = getRefreshTokenFromCookies(req);
 
-  // Always clear cookies, even if token missing/invalid
   clearAuthCookies(res);
   clearCsrfToken(res);
 
   if (!refreshToken) {
-    // No token to revoke, but cookies cleared
     ApiResponse.success(res, { message: 'Logged out successfully' });
     return;
   }
 
-  // Revoke token in DB (never throws)
   await authService.logout(refreshToken);
 
   ApiResponse.success(res, { message: 'Logged out successfully' });

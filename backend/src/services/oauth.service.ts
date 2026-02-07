@@ -9,15 +9,14 @@ import {
 } from '../utils/errors.js';
 import {
   generateTokenPair,
-  type JwtPayload,
   type TokenPair,
+  type DeviceFingerprint,
 } from '../utils/jwt.js';
 import {
   storeOAuthState,
   consumeOAuthState,
 } from '../utils/oauthStateStore.js';
-import { generatePKCEPair, verifyCodeChallenge } from '../utils/pkce.js';
-import { createTokenFamily, addTokenToFamily } from '../utils/tokenFamily.js';
+import { generatePKCEPair } from '../utils/pkce.js';
 import type {
   OAuthProvider,
   OAuthInitResponse,
@@ -35,14 +34,25 @@ import {
 } from '../validators/oauth.validator.js';
 import { z } from 'zod';
 
-// ===================================
-// TYPES
-// ===================================
+// OAuth URLs
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_PROFILE_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 
-/**
- * OAuth user response type
- * Matches Prisma select statements in login/register handlers
- */
+const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
+const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+const GITHUB_PROFILE_URL = 'https://api.github.com/user';
+const GITHUB_EMAIL_URL = 'https://api.github.com/user/emails';
+
+// OAuth scopes
+const GOOGLE_SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+];
+
+const GITHUB_SCOPES = ['user:email', 'read:user'];
+
 interface OAuthUser {
   id: string;
   email: string;
@@ -53,35 +63,6 @@ interface OAuthUser {
   bio: string | null;
   createdAt: Date;
 }
-
-// ===================================
-// OAUTH URLS
-// ===================================
-
-const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GOOGLE_PROFILE_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
-
-const GITHUB_AUTH_URL = 'https://github.com/login/oauth/authorize';
-const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-const GITHUB_PROFILE_URL = 'https://api.github.com/user';
-const GITHUB_EMAIL_URL = 'https://api.github.com/user/emails';
-
-// ===================================
-// OAUTH SCOPES
-// ===================================
-
-const GOOGLE_SCOPES = [
-  'openid',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile',
-];
-
-const GITHUB_SCOPES = ['user:email', 'read:user'];
-
-// ===================================
-// INITIALIZATION
-// ===================================
 
 /**
  * Initialize OAuth LOGIN flow with PKCE
@@ -100,17 +81,15 @@ export async function initializeOAuthLogin(
       throw new ValidationError('Invalid OAuth provider');
     }
 
-    // Generate PKCE pair
     const pkce = generatePKCEPair();
 
-    // Store state with PKCE verifier in Redis
+    // Store state as signed JWT (stateless)
     const stateToken = await storeOAuthState({
       provider,
       flow: 'login',
       codeVerifier: pkce.codeVerifier,
-    });
+    } as Omit<OAuthLoginState, 'createdAt' | 'expiresAt' | 'nonce'>);
 
-    // Build authorization URL with PKCE challenge
     const authUrl = buildAuthorizationUrl(
       provider,
       stateToken,
@@ -119,7 +98,7 @@ export async function initializeOAuthLogin(
 
     tracker.success({ provider, flow: 'login' });
 
-    return { authUrl, expiresIn: 600 }; // 10 minutes
+    return { authUrl, expiresIn: 600 };
   } catch (error) {
     tracker.failure(error, { provider: data.provider });
     throw error;
@@ -148,18 +127,16 @@ export async function initializeOAuthRegister(
       throw new ValidationError('Invalid role');
     }
 
-    // Generate PKCE pair
     const pkce = generatePKCEPair();
 
-    // Store state with PKCE verifier in Redis
+    // Store state as signed JWT (stateless)
     const stateToken = await storeOAuthState({
       provider,
       flow: 'register',
       role,
       codeVerifier: pkce.codeVerifier,
-    });
+    } as Omit<OAuthRegisterState, 'createdAt' | 'expiresAt' | 'nonce'>);
 
-    // Build authorization URL with PKCE challenge
     const authUrl = buildAuthorizationUrl(
       provider,
       stateToken,
@@ -192,7 +169,6 @@ function buildAuthorizationUrl(
       state,
       access_type: 'online',
       prompt: 'select_account',
-      // PKCE parameters
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
     });
@@ -216,22 +192,19 @@ function buildAuthorizationUrl(
   throw new Error(`Unsupported provider: ${provider}`);
 }
 
-// ===================================
-// CALLBACK HANDLING
-// ===================================
-
 /**
  * Handle OAuth callback and return tokens
  */
 export async function handleOAuthCallback(
   provider: OAuthProvider,
   code: string,
-  state: string
+  state: string,
+  fingerprint: DeviceFingerprint
 ): Promise<{ user: OAuthUser; tokens: TokenPair }> {
   const tracker = trackOperation('oauth.callback', undefined, { provider });
 
   try {
-    // Consume state from Redis
+    // Consume state from signed JWT (stateless)
     const oauthState = await consumeOAuthState(state);
 
     if (!oauthState) {
@@ -251,10 +224,9 @@ export async function handleOAuthCallback(
       throw new UnauthorizedError('OAuth provider mismatch');
     }
 
-    // Extract PKCE verifier from state
     const codeVerifier = oauthState.codeVerifier;
 
-    // Exchange code for access token (with PKCE verification)
+    // Exchange code for access token
     const accessToken = await exchangeCodeForToken(
       provider,
       code,
@@ -264,18 +236,24 @@ export async function handleOAuthCallback(
     // Fetch user profile
     const oauthProfile = await fetchUserProfile(provider, accessToken);
 
-    // FLOW DISPATCH
+    // Flow dispatch
     let user: OAuthUser;
     let tokens: TokenPair;
 
     if (oauthState.flow === 'login') {
-      const result = await handleOAuthLogin(oauthState, oauthProfile, tracker);
+      const result = await handleOAuthLogin(
+        oauthState,
+        oauthProfile,
+        fingerprint,
+        tracker
+      );
       user = result.user;
       tokens = result.tokens;
     } else {
       const result = await handleOAuthRegister(
         oauthState,
         oauthProfile,
+        fingerprint,
         tracker
       );
       user = result.user;
@@ -295,12 +273,8 @@ export async function handleOAuthCallback(
   }
 }
 
-// ===================================
-// TOKEN EXCHANGE WITH PKCE
-// ===================================
-
 /**
- * Exchange authorization code for access token with PKCE verification
+ * Exchange authorization code for access token with PKCE
  */
 async function exchangeCodeForToken(
   provider: OAuthProvider,
@@ -322,7 +296,6 @@ async function exchangeCodeForToken(
           client_secret: env.GOOGLE_CLIENT_SECRET,
           redirect_uri: env.GOOGLE_CALLBACK_URL,
           grant_type: 'authorization_code',
-          // PKCE verification
           code_verifier: codeVerifier,
         }),
       });
@@ -347,9 +320,6 @@ async function exchangeCodeForToken(
     }
 
     if (provider === 'github') {
-      // GitHub doesn't support PKCE yet, but we validate on our end
-      // by checking that the state matches (already done in callback handler)
-
       const response = await fetch(GITHUB_TOKEN_URL, {
         method: 'POST',
         headers: {
@@ -402,10 +372,6 @@ async function exchangeCodeForToken(
   }
 }
 
-// ===================================
-// PROFILE FETCHING
-// ===================================
-
 /**
  * Fetch user profile from OAuth provider
  */
@@ -418,9 +384,7 @@ async function fetchUserProfile(
   try {
     if (provider === 'google') {
       const response = await fetch(GOOGLE_PROFILE_URL, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (!response.ok) {
@@ -533,13 +497,13 @@ async function fetchUserProfile(
   }
 }
 
-// ===================================
-// LOGIN HANDLER
-// ===================================
-
+/**
+ * LOGIN HANDLER
+ */
 async function handleOAuthLogin(
   _state: OAuthLoginState,
   profile: Omit<OAuthUserData, 'role'>,
+  fingerprint: DeviceFingerprint,
   tracker: ReturnType<typeof trackOperation>
 ): Promise<{ user: OAuthUser; tokens: TokenPair }> {
   const { provider, email, providerId } = profile;
@@ -569,26 +533,24 @@ async function handleOAuthLogin(
       operation: 'oauth.login',
     });
 
-    // Generate tokens
-    const tokenPayload: JwtPayload = {
-      userId: existingOAuthUser.id,
-      email: existingOAuthUser.email,
-      role: existingOAuthUser.role,
-    };
+    const tokens = generateTokenPair(
+      {
+        userId: existingOAuthUser.id,
+        email: existingOAuthUser.email,
+        role: existingOAuthUser.role,
+      },
+      fingerprint
+    );
 
-    const tokens = generateTokenPair(tokenPayload);
-
-    // Create token family
-    await createTokenFamily(existingOAuthUser.id, tokens.refreshToken);
-
-    // Store refresh token in DB
+    // Store refresh token with JTI + fingerprint
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await prisma.refreshToken.create({
       data: {
         userId: existingOAuthUser.id,
-        token: tokens.refreshToken,
+        jti: tokens.refreshTokenJti,
+        fingerprint: fingerprint.combined,
         expiresAt,
       },
     });
@@ -649,26 +611,23 @@ async function handleOAuthLogin(
       },
     });
 
-    // Generate tokens
-    const tokenPayload: JwtPayload = {
-      userId: updatedUser.id,
-      email: updatedUser.email,
-      role: updatedUser.role,
-    };
+    const tokens = generateTokenPair(
+      {
+        userId: updatedUser.id,
+        email: updatedUser.email,
+        role: updatedUser.role,
+      },
+      fingerprint
+    );
 
-    const tokens = generateTokenPair(tokenPayload);
-
-    // Create token family
-    await createTokenFamily(updatedUser.id, tokens.refreshToken);
-
-    // Store refresh token
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await prisma.refreshToken.create({
       data: {
         userId: updatedUser.id,
-        token: tokens.refreshToken,
+        jti: tokens.refreshTokenJti,
+        fingerprint: fingerprint.combined,
         expiresAt,
       },
     });
@@ -693,13 +652,13 @@ async function handleOAuthLogin(
   );
 }
 
-// ===================================
-// REGISTER HANDLER
-// ===================================
-
+/**
+ * REGISTER HANDLER
+ */
 async function handleOAuthRegister(
   state: OAuthRegisterState,
   profile: Omit<OAuthUserData, 'role'>,
+  fingerprint: DeviceFingerprint,
   tracker: ReturnType<typeof trackOperation>
 ): Promise<{ user: OAuthUser; tokens: TokenPair }> {
   const { provider, email, providerId, fullName, avatarUrl, bio } = profile;
@@ -748,26 +707,23 @@ async function handleOAuthRegister(
         },
       });
 
-      // Generate tokens
-      const tokenPayload: JwtPayload = {
-        userId: newUser.id,
-        email: newUser.email,
-        role: newUser.role,
-      };
+      const tokens = generateTokenPair(
+        {
+          userId: newUser.id,
+          email: newUser.email,
+          role: newUser.role,
+        },
+        fingerprint
+      );
 
-      const tokens = generateTokenPair(tokenPayload);
-
-      // Create token family
-      await createTokenFamily(newUser.id, tokens.refreshToken);
-
-      // Store refresh token
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
       await tx.refreshToken.create({
         data: {
           userId: newUser.id,
-          token: tokens.refreshToken,
+          jti: tokens.refreshTokenJti,
+          fingerprint: fingerprint.combined,
           expiresAt,
         },
       });

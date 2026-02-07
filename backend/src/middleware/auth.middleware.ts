@@ -1,10 +1,23 @@
 import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError } from '../utils/errors.js';
-import { verifyAccessToken } from '../utils/jwt.js';
+import {
+  createDeviceFingerprint,
+  verifyAccessToken,
+  verifyDeviceFingerprint,
+} from '../utils/jwt.js';
 import { prisma } from '../config/database.js';
 import { getAccessTokenFromCookies } from '../utils/cookieUtils.js';
 import { logger } from '../utils/logger.js';
 import { isTokenRevoked } from '../services/tokenRevocation.service.js';
+
+/**
+ * Extract device fingerprint from request
+ */
+function getDeviceFingerprint(req: Request) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  return createDeviceFingerprint(ip, userAgent);
+}
 
 /**
  * Authenticate user via JWT token
@@ -41,7 +54,31 @@ export const authenticate = async (
     // Verify token
     const payload = verifyAccessToken(token);
 
-    // Check if token is revoked (jti lookup)
+    // Verify device fingerprint if present
+    if (payload.fingerprint) {
+      const currentFingerprint = getDeviceFingerprint(req);
+
+      const isValid = verifyDeviceFingerprint(
+        payload.fingerprint,
+        currentFingerprint
+      );
+
+      if (!isValid) {
+        logger.error('Device fingerprint mismatch', {
+          userId: payload.userId,
+          jti: payload.jti,
+          path: req.path,
+          operation: 'auth.authenticate',
+          severity: 'high',
+        });
+
+        throw new UnauthorizedError(
+          'Device fingerprint mismatch. Please log in again.'
+        );
+      }
+    }
+
+    // Check if token is revoked
     if (payload.jti) {
       const revoked = await isTokenRevoked(payload.jti);
       if (revoked) {
@@ -50,7 +87,6 @@ export const authenticate = async (
           jti: payload.jti,
           path: req.path,
           operation: 'auth.authenticate',
-          severity: 'medium',
         });
 
         throw new UnauthorizedError(
@@ -84,8 +120,6 @@ export const authenticate = async (
     logger.debug('Authentication successful', {
       userId: user.id,
       email: user.email,
-      role: user.role,
-      path: req.path,
       operation: 'auth.authenticate',
     });
 
@@ -170,6 +204,20 @@ export const optionalAuthenticate = async (
 
     // Verify token
     const payload = verifyAccessToken(token);
+
+    // Verify fingerprint if present
+    if (payload.fingerprint) {
+      const currentFingerprint = getDeviceFingerprint(req);
+      const isValid = verifyDeviceFingerprint(
+        payload.fingerprint,
+        currentFingerprint
+      );
+
+      if (!isValid) {
+        next();
+        return;
+      }
+    }
 
     // Check revocation
     if (payload.jti) {

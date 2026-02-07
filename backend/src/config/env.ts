@@ -66,11 +66,52 @@ const envSchema = z.object({
     }),
 
   // Redis Configuration
-  REDIS_URL: z.string().min(1, 'Redis URL is required for OAuth state storage'),
-  REDIS_MAX_RETRIES: z.string().default('3').transform(Number),
-  REDIS_RETRY_DELAY_MS: z.string().default('1000').transform(Number),
-  REDIS_CONNECT_TIMEOUT: z.string().default('10000').transform(Number),
-  REDIS_COMMAND_TIMEOUT: z.string().default('5000').transform(Number),
+  REDIS_HOST: z.string().min(1, 'Redis host is required'),
+  REDIS_PORT: z
+    .string()
+    .default('6379')
+    .transform(Number)
+    .refine((val) => val > 0 && val <= 65535, {
+      message: 'REDIS_PORT must be between 1 and 65535',
+    }),
+  REDIS_USERNAME: z.string().optional(),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_TLS_ENABLED: z
+    .string()
+    .default('true')
+    .transform((val) => val === 'true'),
+  REDIS_TLS_REJECT_UNAUTHORIZED: z
+    .string()
+    .default('true')
+    .transform((val) => val === 'true'),
+  REDIS_MAX_RETRIES: z
+    .string()
+    .default('10')
+    .transform(Number)
+    .refine((val) => val > 0 && val <= 100, {
+      message: 'REDIS_MAX_RETRIES must be between 1 and 100',
+    }),
+  REDIS_RETRY_DELAY_MS: z
+    .string()
+    .default('100')
+    .transform(Number)
+    .refine((val) => val > 0 && val <= 10000, {
+      message: 'REDIS_RETRY_DELAY_MS must be between 1ms and 10000ms',
+    }),
+  REDIS_CONNECT_TIMEOUT: z
+    .string()
+    .default('10000')
+    .transform(Number)
+    .refine((val) => val >= 1000 && val <= 60000, {
+      message: 'REDIS_CONNECT_TIMEOUT must be between 1000ms and 60000ms',
+    }),
+  REDIS_COMMAND_TIMEOUT: z
+    .string()
+    .default('5000')
+    .transform(Number)
+    .refine((val) => val >= 1000 && val <= 60000, {
+      message: 'REDIS_COMMAND_TIMEOUT must be between 1000ms and 60000ms',
+    }),
   REDIS_PREFIX: z.string().default('codionix'),
 
   // Cookie Configuration
