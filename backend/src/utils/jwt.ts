@@ -3,7 +3,14 @@ import { env } from '../config/env.js';
 import { UnauthorizedError } from './errors.js';
 import crypto from 'crypto';
 
-export interface JwtPayload {
+export interface AccessTokenPayload {
+  userId: string;
+  email: string;
+  role: string;
+  fingerprint?: string;
+}
+
+export interface RefreshTokenPayload {
   userId: string;
   email: string;
   role: string;
@@ -70,12 +77,11 @@ export function verifyDeviceFingerprint(
  * Generate access token (short-lived)
  */
 export const generateAccessToken = (
-  payload: Omit<JwtPayload, 'jti'>,
+  payload: AccessTokenPayload,
   fingerprint?: DeviceFingerprint
 ): string => {
-  const tokenPayload: JwtPayload = {
+  const tokenPayload: AccessTokenPayload = {
     ...payload,
-    jti: generateJti(),
     ...(fingerprint && { fingerprint: fingerprint.combined }),
   };
 
@@ -89,13 +95,13 @@ export const generateAccessToken = (
  * Generate refresh token (long-lived)
  */
 export const generateRefreshToken = (
-  payload: Omit<JwtPayload, 'jti'>,
+  payload: Omit<RefreshTokenPayload, 'jti'>,
   fingerprint?: DeviceFingerprint,
   tokenVersion: number = 1
 ): { token: string; jti: string } => {
   const jti = generateJti();
 
-  const tokenPayload: JwtPayload = {
+  const tokenPayload: RefreshTokenPayload = {
     ...payload,
     jti,
     tokenVersion,
@@ -114,7 +120,7 @@ export const generateRefreshToken = (
  * Generate both access and refresh tokens
  */
 export const generateTokenPair = (
-  payload: Omit<JwtPayload, 'jti' | 'tokenVersion' | 'fingerprint'>,
+  payload: AccessTokenPayload,
   fingerprint?: DeviceFingerprint,
   tokenVersion: number = 1
 ): TokenPair => {
@@ -135,9 +141,12 @@ export const generateTokenPair = (
 /**
  * Verify access token
  */
-export const verifyAccessToken = (token: string): JwtPayload => {
+export const verifyAccessToken = (token: string): AccessTokenPayload => {
   try {
-    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
+    const decoded = jwt.verify(
+      token,
+      env.JWT_ACCESS_SECRET
+    ) as AccessTokenPayload;
     return decoded;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
@@ -153,9 +162,12 @@ export const verifyAccessToken = (token: string): JwtPayload => {
 /**
  * Verify refresh token
  */
-export const verifyRefreshToken = (token: string): JwtPayload => {
+export const verifyRefreshToken = (token: string): RefreshTokenPayload => {
   try {
-    const decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as JwtPayload;
+    const decoded = jwt.verify(
+      token,
+      env.JWT_REFRESH_SECRET
+    ) as RefreshTokenPayload;
     return decoded;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
@@ -171,9 +183,11 @@ export const verifyRefreshToken = (token: string): JwtPayload => {
 /**
  * Decode token without verification (for debugging)
  */
-export const decodeToken = (token: string): JwtPayload | null => {
+export const decodeToken = (
+  token: string
+): AccessTokenPayload | RefreshTokenPayload | null => {
   try {
-    return jwt.decode(token) as JwtPayload;
+    return jwt.decode(token) as AccessTokenPayload | RefreshTokenPayload;
   } catch {
     return null;
   }

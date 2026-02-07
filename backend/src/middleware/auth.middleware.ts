@@ -4,11 +4,11 @@ import {
   createDeviceFingerprint,
   verifyAccessToken,
   verifyDeviceFingerprint,
+  type AccessTokenPayload,
 } from '../utils/jwt.js';
 import { prisma } from '../config/database.js';
 import { getAccessTokenFromCookies } from '../utils/cookieUtils.js';
 import { logger } from '../utils/logger.js';
-import { isTokenRevoked } from '../services/tokenRevocation.service.js';
 
 /**
  * Extract device fingerprint from request
@@ -52,7 +52,7 @@ export const authenticate = async (
     }
 
     // Verify token
-    const payload = verifyAccessToken(token);
+    const payload: AccessTokenPayload = verifyAccessToken(token);
 
     // Verify device fingerprint if present
     if (payload.fingerprint) {
@@ -66,7 +66,6 @@ export const authenticate = async (
       if (!isValid) {
         logger.error('Device fingerprint mismatch', {
           userId: payload.userId,
-          jti: payload.jti,
           path: req.path,
           operation: 'auth.authenticate',
           severity: 'high',
@@ -74,23 +73,6 @@ export const authenticate = async (
 
         throw new UnauthorizedError(
           'Device fingerprint mismatch. Please log in again.'
-        );
-      }
-    }
-
-    // Check if token is revoked
-    if (payload.jti) {
-      const revoked = await isTokenRevoked(payload.jti);
-      if (revoked) {
-        logger.warn('Revoked token used', {
-          userId: payload.userId,
-          jti: payload.jti,
-          path: req.path,
-          operation: 'auth.authenticate',
-        });
-
-        throw new UnauthorizedError(
-          'Token has been revoked. Please log in again.'
         );
       }
     }
@@ -203,7 +185,7 @@ export const optionalAuthenticate = async (
     }
 
     // Verify token
-    const payload = verifyAccessToken(token);
+    const payload: AccessTokenPayload = verifyAccessToken(token);
 
     // Verify fingerprint if present
     if (payload.fingerprint) {
@@ -214,16 +196,6 @@ export const optionalAuthenticate = async (
       );
 
       if (!isValid) {
-        next();
-        return;
-      }
-    }
-
-    // Check revocation
-    if (payload.jti) {
-      const revoked = await isTokenRevoked(payload.jti);
-      if (revoked) {
-        // Silently skip - don't attach user
         next();
         return;
       }
