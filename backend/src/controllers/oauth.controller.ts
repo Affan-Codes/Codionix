@@ -15,22 +15,13 @@ import {
   UnauthorizedError,
 } from '../utils/errors.js';
 import { issueCsrfToken } from '../middleware/csrf.middleware.js';
-import { createDeviceFingerprint } from '../utils/jwt.js';
+import { getDeviceFingerprintFromRequest } from '../utils/fingerprint.js';
 
 interface OAuthCallbackQuery {
   code?: string;
   state?: string;
   error?: string;
   error_description?: string;
-}
-
-/**
- * Extract device fingerprint from request
- */
-function getDeviceFingerprint(req: Request) {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  return createDeviceFingerprint(ip, userAgent);
 }
 
 /**
@@ -100,7 +91,7 @@ export const googleCallback = asyncHandler(
     }
 
     try {
-      const fingerprint = getDeviceFingerprint(req);
+      const fingerprint = getDeviceFingerprintFromRequest(req);
 
       const { user, tokens } = await oauthService.handleOAuthCallback(
         'google',
@@ -171,7 +162,7 @@ export const githubCallback = asyncHandler(
     }
 
     try {
-      const fingerprint = getDeviceFingerprint(req);
+      const fingerprint = getDeviceFingerprintFromRequest(req);
 
       const { user, tokens } = await oauthService.handleOAuthCallback(
         'github',
@@ -186,7 +177,6 @@ export const githubCallback = asyncHandler(
         operation: 'oauth.githubCallback',
       });
 
-     
       setAuthCookies(res, tokens);
       issueCsrfToken(res);
 

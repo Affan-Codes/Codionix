@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger.js';
+import { sanitizeBody, sanitizeHeaders } from '../utils/sanitize.js';
 
 /**
  * Request correlation middleware
@@ -29,7 +30,7 @@ export const requestCorrelation = (
   res.setHeader('X-Correlation-ID', correlationId);
 
   // Sanitize request body for logging
-  const sanitizedBody = req.body ? sanitizeRequestBody(req.body) : undefined;
+  const sanitizedBody = req.body ? sanitizeBody(req.body) : undefined;
 
   // Log incoming request with FULL structured context
   logger.info('Incoming request', {
@@ -49,73 +50,4 @@ export const requestCorrelation = (
   });
 
   next();
-};
-
-/**
- * Sanitize request body for logging
- * CRITICAL: Never log sensitive fields like passwords, tokens, credit cards
- */
-const sanitizeRequestBody = (body: any): any => {
-  if (!body || typeof body !== 'object') return {};
-
-  const sanitized = { ...body };
-  const sensitiveFields = [
-    'password',
-    'passwordHash',
-    'token',
-    'accessToken',
-    'refreshToken',
-    'secret',
-    'apiKey',
-    'creditCard',
-    'ssn',
-    'cvv',
-  ];
-
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = '***REDACTED***';
-    }
-  }
-
-  return sanitized;
-};
-
-/**
- * Sanitize headers for logging
- * CRITICAL: Never log Authorization headers or sensitive data
- */
-const sanitizeHeaders = (headers: any): any => {
-  const sanitized = { ...headers };
-  const sensitiveHeaders = [
-    'authorization',
-    'cookie',
-    'x-api-key',
-    'x-auth-token',
-  ];
-
-  for (const header of sensitiveHeaders) {
-    if (header in sanitized) {
-      sanitized[header] = '***REDACTED***';
-    }
-  }
-
-  return sanitized;
-};
-
-/**
- * Get correlation context for current request
- * DEPRECATED: Use getLogContext from logger.ts instead
- * Kept for backward compatibility
- */
-export const getCorrelationContext = (req?: Request) => {
-  if (!req) return {};
-
-  return {
-    correlationId: req.correlationId,
-    userId: req.user?.userId,
-    userEmail: req.user?.email,
-    path: req.path,
-    method: req.method,
-  };
 };

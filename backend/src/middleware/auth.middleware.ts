@@ -1,7 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError } from '../utils/errors.js';
 import {
-  createDeviceFingerprint,
   verifyAccessToken,
   verifyDeviceFingerprint,
   type AccessTokenPayload,
@@ -9,15 +8,7 @@ import {
 import { prisma } from '../config/database.js';
 import { getAccessTokenFromCookies } from '../utils/cookieUtils.js';
 import { logger } from '../utils/logger.js';
-
-/**
- * Extract device fingerprint from request
- */
-function getDeviceFingerprint(req: Request) {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  return createDeviceFingerprint(ip, userAgent);
-}
+import { getDeviceFingerprintFromRequest } from '../utils/fingerprint.js';
 
 /**
  * Authenticate user via JWT token
@@ -56,7 +47,7 @@ export const authenticate = async (
 
     // Verify device fingerprint if present
     if (payload.fingerprint) {
-      const currentFingerprint = getDeviceFingerprint(req);
+      const currentFingerprint = getDeviceFingerprintFromRequest(req);
 
       const isValid = verifyDeviceFingerprint(
         payload.fingerprint,
@@ -189,7 +180,7 @@ export const optionalAuthenticate = async (
 
     // Verify fingerprint if present
     if (payload.fingerprint) {
-      const currentFingerprint = getDeviceFingerprint(req);
+      const currentFingerprint = getDeviceFingerprintFromRequest(req);
       const isValid = verifyDeviceFingerprint(
         payload.fingerprint,
         currentFingerprint

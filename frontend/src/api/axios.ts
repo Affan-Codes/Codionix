@@ -197,8 +197,17 @@ apiClient.interceptors.response.use(
         processQueue(refreshError, null);
         isRefreshing = false;
 
+        //  Clear stale cookies before any redirect
+        const clearCookie = (name: string) => {
+          document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;`;
+        };
+
         // If refresh failed with 401, force logout
         if (refreshError.response?.status === 401) {
+          clearCookie("refresh_token");
+          clearCookie("access_token");
+          clearCookie("csrf_token");
+
           window.location.href = "/login";
           return Promise.reject(refreshError);
         }
@@ -219,6 +228,10 @@ apiClient.interceptors.response.use(
         }
 
         // Other refresh errors - force logout
+        clearCookie("refresh_token");
+        clearCookie("access_token");
+        clearCookie("csrf_token");
+        
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }

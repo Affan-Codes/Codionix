@@ -19,16 +19,7 @@ import {
   clearCsrfToken,
   issueCsrfToken,
 } from '../middleware/csrf.middleware.js';
-import { createDeviceFingerprint } from '../utils/jwt.js';
-
-/**
- * Extract device fingerprint from request
- */
-function getDeviceFingerprint(req: Request) {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  return createDeviceFingerprint(ip, userAgent);
-}
+import { getDeviceFingerprintFromRequest } from '../utils/fingerprint.js';
 
 /**
  * Register a new user
@@ -36,7 +27,7 @@ function getDeviceFingerprint(req: Request) {
  */
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const data: RegisterInput = req.body;
-  const fingerprint = getDeviceFingerprint(req);
+  const fingerprint = getDeviceFingerprintFromRequest(req);
 
   const result = await authService.register(data, fingerprint);
 
@@ -55,7 +46,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const data: LoginInput = req.body;
-  const fingerprint = getDeviceFingerprint(req);
+  const fingerprint = getDeviceFingerprintFromRequest(req);
 
   const result = await authService.login(data, fingerprint);
 
@@ -103,7 +94,7 @@ export const refreshToken = asyncHandler(
       return;
     }
 
-    const fingerprint = getDeviceFingerprint(req);
+    const fingerprint = getDeviceFingerprintFromRequest(req);
     const tokens = await authService.refreshAccessToken(
       refreshToken,
       fingerprint

@@ -1,8 +1,4 @@
 import { Button } from "@/components/ui/button";
-import {
-  useOAuthLoginInit,
-  useOAuthRegisterInit,
-} from "@/hooks/mutations/useAuthMutations";
 import { useState } from "react";
 import {
   Dialog,
@@ -22,7 +18,12 @@ import {
 
 interface OAuthButtonsProps {
   flow: "login" | "register";
+  onOAuthClick: (
+    provider: "google" | "github",
+    role?: "STUDENT" | "MENTOR" | "EMPLOYER",
+  ) => Promise<void>;
 }
+
 const ROLE_OPTIONS = [
   {
     value: USER_ROLES.STUDENT,
@@ -44,7 +45,7 @@ const ROLE_OPTIONS = [
   },
 ] as const;
 
-export function OAuthButtons({ flow }: OAuthButtonsProps) {
+export function OAuthButtons({ flow, onOAuthClick }: OAuthButtonsProps) {
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<
     "google" | "github" | null
@@ -53,20 +54,26 @@ export function OAuthButtons({ flow }: OAuthButtonsProps) {
     "STUDENT" | "MENTOR" | "EMPLOYER"
   >("STUDENT");
 
-  const oauthLogin = useOAuthLoginInit();
-  const oauthRegister = useOAuthRegisterInit();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleOAuthClick = async (provider: "google" | "github") => {
+    // Clean up expired OAuth state from previous attempts
+    const expiresAt = sessionStorage.getItem("oauth_expires_at");
+    if (expiresAt && Date.now() > parseInt(expiresAt, 10)) {
+      sessionStorage.removeItem("oauth_expires_at");
+    }
+
     if (flow === "register") {
       // For register flow, show role selection dialog first
       setSelectedProvider(provider);
       setShowRoleDialog(true);
     } else {
       // For login flow, directly initiate OAuth
+      setIsProcessing(true);
       try {
-        const { authUrl } = await oauthLogin.handleSubmit(provider);
-        window.location.href = authUrl;
+        await onOAuthClick(provider);
       } catch (error) {
+        setIsProcessing(false);
         // Error handled by mutation
       }
     }
@@ -75,23 +82,16 @@ export function OAuthButtons({ flow }: OAuthButtonsProps) {
   const handleRoleConfirm = async () => {
     if (!selectedProvider) return;
 
+    setIsProcessing(true);
     try {
-      const { authUrl } = await oauthRegister.handleSubmit({
-        provider: selectedProvider,
-        role: selectedRole,
-      });
-      window.location.href = authUrl;
+      await onOAuthClick(selectedProvider, selectedRole);
     } catch (error) {
       // Error handled by mutation
+      setIsProcessing(false);
       setShowRoleDialog(false);
       setSelectedProvider(null);
     }
   };
-
-  const isLoading =
-    oauthLogin.isPending ||
-    oauthRegister.isPending ||
-    (flow === "register" && showRoleDialog);
 
   return (
     <>
@@ -100,10 +100,10 @@ export function OAuthButtons({ flow }: OAuthButtonsProps) {
         <Button
           variant="outline"
           onClick={() => handleOAuthClick("google")}
-          disabled={isLoading}
+          disabled={isProcessing}
           className="h-11 gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
         >
-          {oauthLogin.isPending || oauthRegister.isPending ? (
+          {isProcessing ? (
             <Loader2Icon className="size-4 animate-spin" />
           ) : (
             <svg className="size-4" viewBox="0 0 24 24">
@@ -132,10 +132,10 @@ export function OAuthButtons({ flow }: OAuthButtonsProps) {
         <Button
           variant="outline"
           onClick={() => handleOAuthClick("github")}
-          disabled={isLoading}
+          disabled={isProcessing}
           className="h-11 gap-2 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
         >
-          {oauthLogin.isPending || oauthRegister.isPending ? (
+          {isProcessing ? (
             <Loader2Icon className="size-4 animate-spin" />
           ) : (
             <svg className="size-4" viewBox="0 0 24 24" fill="currentColor">
@@ -226,16 +226,16 @@ export function OAuthButtons({ flow }: OAuthButtonsProps) {
                   setSelectedProvider(null);
                 }}
                 className="flex-1"
-                disabled={oauthRegister.isPending}
+                disabled={isProcessing}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleRoleConfirm}
-                disabled={oauthRegister.isPending}
+                disabled={isProcessing}
                 className="flex-1"
               >
-                {oauthRegister.isPending ? (
+                {isProcessing ? (
                   <>
                     <Loader2Icon className="size-4 animate-spin" />
                     Redirecting...

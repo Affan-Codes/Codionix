@@ -5,6 +5,7 @@ import { ApiResponse } from '../utils/apiResponse.js';
 import { ZodError } from 'zod';
 import { Prisma } from '../generated/prisma/client.js';
 import { randomUUID } from 'crypto';
+import { sanitizeBody } from '../utils/sanitize.js';
 
 export const errorHandler = (
   err: Error,
@@ -262,33 +263,4 @@ export const errorHandler = (
       correlationId,
     }
   );
-};
-
-/**
- * Sanitize request body for logging
- * CRITICAL: Never log sensitive fields like passwords, tokens, credit cards
- */
-const sanitizeBody = (body: any): any => {
-  if (!body || typeof body !== 'object') return body;
-
-  const sanitized = { ...body };
-  const sensitiveFields = [
-    'password',
-    'passwordHash',
-    'token',
-    'accessToken',
-    'refreshToken',
-    'secret',
-    'apiKey',
-    'creditCard',
-    'ssn',
-  ];
-
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = '***REDACTED***';
-    }
-  }
-
-  return sanitized;
 };

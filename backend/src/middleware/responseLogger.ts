@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { logger } from '../utils/logger.js';
+import { sanitizeBody } from '../utils/sanitize.js';
 
 /**
  * Response logging middleware
@@ -99,7 +100,7 @@ function logResponse(req: Request, res: Response, body: any): void {
   // Add response body ONLY for errors (4xx/5xx)
   // Never log successful response bodies (could be huge, contain sensitive data)
   if (res.statusCode >= 400 && body) {
-    responseContext.responseBody = sanitizeResponseBody(body);
+    responseContext.responseBody = sanitizeBody(body);
   }
 
   // Add performance warning if slow
@@ -132,8 +133,8 @@ function logResponse(req: Request, res: Response, body: any): void {
       statusCode: res.statusCode,
       duration: `${duration}ms`,
       query: req.query,
-      body: sanitizeRequestBody(req.body),
-      responseBody: body ? sanitizeResponseBody(body) : undefined,
+      body: sanitizeBody(req.body),
+      responseBody: body ? sanitizeBody(body) : undefined,
       userId: req.user?.userId,
       ip: req.ip,
       userAgent: req.headers['user-agent'],
@@ -141,70 +142,4 @@ function logResponse(req: Request, res: Response, body: any): void {
       severity: 'high',
     });
   }
-}
-
-/**
- * Sanitize response body for logging
- * Remove sensitive data that might be in error responses
- */
-function sanitizeResponseBody(body: any): any {
-  if (!body || typeof body !== 'object') return body;
-
-  const sanitized = { ...body };
-  const sensitiveFields = [
-    'password',
-    'token',
-    'accessToken',
-    'refreshToken',
-    'secret',
-    'apiKey',
-  ];
-
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = '***REDACTED***';
-    }
-  }
-
-  // Also sanitize nested error details
-  if (sanitized.error && typeof sanitized.error === 'object') {
-    sanitized.error = { ...sanitized.error };
-    for (const field of sensitiveFields) {
-      if (field in sanitized.error) {
-        sanitized.error[field] = '***REDACTED***';
-      }
-    }
-  }
-
-  return sanitized;
-}
-
-/**
- * Sanitize request body for logging
- * CRITICAL: Never log sensitive fields like passwords, tokens, credit cards
- */
-function sanitizeRequestBody(body: any): any {
-  if (!body || typeof body !== 'object') return body;
-
-  const sanitized = { ...body };
-  const sensitiveFields = [
-    'password',
-    'passwordHash',
-    'token',
-    'accessToken',
-    'refreshToken',
-    'secret',
-    'apiKey',
-    'creditCard',
-    'ssn',
-    'cvv',
-  ];
-
-  for (const field of sensitiveFields) {
-    if (field in sanitized) {
-      sanitized[field] = '***REDACTED***';
-    }
-  }
-
-  return sanitized;
 }

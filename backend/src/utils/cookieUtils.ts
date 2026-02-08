@@ -1,5 +1,5 @@
 import type { Response, Request } from 'express';
-import { env } from '../config/env.js';
+import { getClearCookieOptions, getCookieOptions } from '../config/cookie.js';
 
 const COOKIE_NAMES = {
   REFRESH_TOKEN: 'refresh_token',
@@ -13,30 +13,22 @@ export function setRefreshTokenCookie(
   res: Response,
   refreshToken: string
 ): void {
-  res.cookie(COOKIE_NAMES.REFRESH_TOKEN, refreshToken, {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE,
-    domain: env.COOKIE_DOMAIN,
-    path: '/',
-    maxAge: env.COOKIE_MAX_AGE,
-    signed: true,
-  });
+  res.cookie(
+    COOKIE_NAMES.REFRESH_TOKEN,
+    refreshToken,
+    getCookieOptions('refresh')
+  );
 }
 
 /**
  * Set access token cookie (httpOnly, short-lived)
  */
 export function setAccessTokenCookie(res: Response, accessToken: string): void {
-  res.cookie(COOKIE_NAMES.ACCESS_TOKEN, accessToken, {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE,
-    domain: env.COOKIE_DOMAIN,
-    path: '/',
-    maxAge: 15 * 60 * 1000, // 15 minutes
-    signed: true,
-  });
+  res.cookie(
+    COOKIE_NAMES.ACCESS_TOKEN,
+    accessToken,
+    getCookieOptions('access')
+  );
 }
 
 /**
@@ -57,16 +49,10 @@ export function setAuthCookies(
  * Clear all auth cookies (logout)
  */
 export function clearAuthCookies(res: Response): void {
-  const cookieOptions = {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none',
-    domain: env.COOKIE_DOMAIN,
-    path: '/',
-  };
+  const clearOptions = getClearCookieOptions();
 
-  res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, cookieOptions);
-  res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, cookieOptions);
+  res.clearCookie(COOKIE_NAMES.REFRESH_TOKEN, clearOptions);
+  res.clearCookie(COOKIE_NAMES.ACCESS_TOKEN, clearOptions);
 }
 
 /**

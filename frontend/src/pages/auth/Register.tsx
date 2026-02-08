@@ -25,6 +25,7 @@ import {
   AwardIcon,
   Loader2Icon,
 } from "lucide-react";
+import { useOAuthRegisterInit } from "@/hooks/mutations/useAuthMutations";
 
 const registerSchema = z
   .object({
@@ -53,8 +54,9 @@ const registerSchema = z
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function Register() {
-  const { register: registerUser, isLoading } = useAuth();
+  const { register: registerUser, isLoading } = useAuth(); // For email/password registration
   const navigate = useNavigate();
+  const oauthRegister = useOAuthRegisterInit(); // For OAuth initialization
 
   const {
     register,
@@ -70,6 +72,7 @@ export default function Register() {
     mode: "onBlur",
   });
 
+  // Email/Password Registration Handler
   const onSubmit = async (data: RegisterFormData) => {
     try {
       await registerUser({
@@ -81,6 +84,32 @@ export default function Register() {
       navigate(ROUTES.DASHBOARD);
     } catch (error) {
       // Error handled by mutation
+    }
+  };
+
+  // OAuth Registration Handler
+  const handleOAuthClick = async (
+    provider: "google" | "github",
+    role?: "STUDENT" | "MENTOR" | "EMPLOYER",
+  ) => {
+    if (!role) {
+      console.error("Role is required for OAuth registration");
+      return;
+    }
+
+    try {
+      const { authUrl, expiresIn } = await oauthRegister.handleSubmit({
+        provider,
+        role,
+      });
+
+      const expiresAt = Date.now() + expiresIn * 1000;
+
+      sessionStorage.setItem("oauth_expires_at", String(expiresAt));
+
+      window.location.href = authUrl;
+    } catch (error) {
+      // Error handled by mutation (toast notification)
     }
   };
 
@@ -120,7 +149,7 @@ export default function Register() {
         </div>
 
         {/* OAuth */}
-        <OAuthButtons flow="register" />
+        <OAuthButtons flow="register" onOAuthClick={handleOAuthClick} />
 
         {/* Divider */}
         <div className="relative">

@@ -36,6 +36,7 @@ app.use(
     origin: env.CORS_ORIGIN,
     credentials: true,
     exposedHeaders: ['X-Correlation-ID'], // Allow client to read correlation ID
+    maxAge: 86400, // Cache preflight responses for 24 hours
   })
 );
 

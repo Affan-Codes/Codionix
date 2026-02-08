@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError } from '../utils/errors.js';
 import crypto from 'crypto';
-import { env } from '../config/env.js';
+import { getClearCookieOptions, getCookieOptions } from '../config/cookie.js';
 
 const CSRF_COOKIE_NAME = 'csrf_token';
 const CSRF_HEADER_NAME = 'x-csrf-token';
@@ -17,14 +17,7 @@ function generateCsrfToken(): string {
  * Set CSRF token cookie
  */
 export function setCsrfTokenCookie(res: Response, token: string): void {
-  res.cookie(CSRF_COOKIE_NAME, token, {
-    httpOnly: false, // JavaScript needs to read this
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE,
-    domain: env.COOKIE_DOMAIN,
-    path: '/',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  });
+  res.cookie(CSRF_COOKIE_NAME, token, getCookieOptions('csrf'));
 }
 
 /**
@@ -42,12 +35,7 @@ export function issueCsrfToken(res: Response): string {
  * Call this when user logs out
  */
 export function clearCsrfToken(res: Response): void {
-  res.clearCookie(CSRF_COOKIE_NAME, {
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none',
-    domain: env.COOKIE_DOMAIN,
-    path: '/',
-  });
+  res.clearCookie(CSRF_COOKIE_NAME, getClearCookieOptions());
 }
 
 /**

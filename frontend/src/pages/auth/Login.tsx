@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { RocketIcon, UsersIcon, TrophyIcon } from "lucide-react";
+import { useOAuthLoginInit } from "@/hooks/mutations/useAuthMutations";
 
 const loginSchema = z.object({
   email: z.email("Invalid email address").min(1, "Email is required"),
@@ -20,8 +21,9 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function Login() {
-  const { login, isLoading } = useAuth();
+  const { login, isLoading } = useAuth(); // For email/password login
   const navigate = useNavigate();
+  const oauthLogin = useOAuthLoginInit(); // For OAuth initialization
 
   const {
     register,
@@ -32,12 +34,28 @@ export default function Login() {
     mode: "onBlur",
   });
 
+  // Email/Password Login Handler
   const onSubmit = async (data: LoginFormData) => {
     try {
       await login(data);
       navigate(ROUTES.DASHBOARD);
     } catch (error) {
       // Error handled by mutation
+    }
+  };
+
+  // OAuth Login Handler
+  const handleOAuthClick = async (provider: "google" | "github") => {
+    try {
+      const { authUrl, expiresIn } = await oauthLogin.handleSubmit(provider);
+
+      const expiresAt = Date.now() + expiresIn * 1000;
+
+      sessionStorage.setItem("oauth_expires_at", String(expiresAt));
+
+      window.location.href = authUrl;
+    } catch (error) {
+      // Error handled by mutation (toast notification)
     }
   };
 
@@ -74,7 +92,7 @@ export default function Login() {
         </div>
 
         {/* OAuth */}
-        <OAuthButtons flow="login" />
+        <OAuthButtons flow="login" onOAuthClick={handleOAuthClick} />
 
         {/* Divider */}
         <div className="relative">

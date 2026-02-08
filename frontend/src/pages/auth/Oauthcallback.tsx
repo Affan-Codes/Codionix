@@ -30,6 +30,24 @@ export default function OAuthCallback() {
       // Reset error state on retry
       setError(null);
 
+      const expiresAt = sessionStorage.getItem("oauth_expires_at");
+
+      if (expiresAt) {
+        const expiryTimestamp = parseInt(expiresAt, 10);
+        const isExpired = Date.now() > expiryTimestamp;
+
+        if (isExpired) {
+          sessionStorage.removeItem("oauth_expires_at");
+
+          setError(
+            "OAuth session expired. Please try signing in again. (Sessions expire after 10 minutes)",
+          );
+          return; 
+        }
+
+        sessionStorage.removeItem("oauth_expires_at");
+      }
+
       // Give cookies a moment to be set by browser
       await new Promise((resolve) => setTimeout(resolve, 100));
 
