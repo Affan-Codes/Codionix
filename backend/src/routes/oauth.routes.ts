@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as oauthController from '../controllers/oauth.controller.js';
 import { validateBody } from '../middleware/validate.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import {
   oauthLoginInitSchema,
   oauthRegisterInitSchema,
@@ -29,6 +29,7 @@ const oauthInitLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 /**
@@ -44,6 +45,7 @@ const oauthCallbackLimiter = rateLimit({
   skip: (req) => {
     return !!req.query.state && !!req.query.code;
   },
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 // ===================================

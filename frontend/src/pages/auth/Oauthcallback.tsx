@@ -42,14 +42,11 @@ export default function OAuthCallback() {
           setError(
             "OAuth session expired. Please try signing in again. (Sessions expire after 10 minutes)",
           );
-          return; 
+          return;
         }
 
         sessionStorage.removeItem("oauth_expires_at");
       }
-
-      // Give cookies a moment to be set by browser
-      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Fetch current user (will use cookies automatically)
       const { userApi } = await import("@/api/user.api");
@@ -92,7 +89,9 @@ export default function OAuthCallback() {
       const errorMessage =
         error.response?.status === 401
           ? "Authentication failed. Please try signing in again."
-          : "Failed to complete sign in. Please try again.";
+          : retryCount >= RETRY_CONFIG.MAX_RETRIES
+            ? "Failed to complete sign in after multiple attempts. Please try again."
+            : "Failed to complete sign in. Please try again.";
 
       setError(errorMessage);
     }

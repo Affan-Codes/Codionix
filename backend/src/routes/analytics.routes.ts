@@ -6,7 +6,7 @@ import {
   canCreateProjects,
   isStudent,
 } from '../middleware/authorize.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const router = Router();
 
@@ -30,6 +30,7 @@ const analyticsLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 // ===================================

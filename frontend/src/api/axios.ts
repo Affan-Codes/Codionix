@@ -124,26 +124,11 @@ apiClient.interceptors.response.use(
       });
     }
 
-    // Server error handling with retry
+    // Server error handling (no auto-retry - let backend infrastructure handle retries)
     const isServerError =
       error.response?.status >= 500 && error.response?.status < 600;
-    const isRetryableMethod = ["GET", "HEAD", "OPTIONS"].includes(
-      originalRequest?.method?.toUpperCase() || "",
-    );
 
-    if (isServerError && isRetryableMethod && !originalRequest._retry) {
-      originalRequest._retry = true;
-      originalRequest._retryCount = (originalRequest._retryCount || 0) + 1;
-
-      // Only retry once to avoid infinite loops
-      if (originalRequest._retryCount <= 1) {
-        // Wait 1 second before retry (gives server time to recover)
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        return apiClient(originalRequest);
-      }
-
-      // Max retries exceeded - give up with user-friendly message
+    if (isServerError) {
       return Promise.reject({
         ...error,
         userMessage:
@@ -231,7 +216,7 @@ apiClient.interceptors.response.use(
         clearCookie("refresh_token");
         clearCookie("access_token");
         clearCookie("csrf_token");
-        
+
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }

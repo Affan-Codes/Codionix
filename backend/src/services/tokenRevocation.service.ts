@@ -134,36 +134,7 @@ export async function detectTokenReuse(
 }
 
 /**
- * Clean up expired tokens (run as cron job)
- */
-export async function cleanupExpiredTokens(): Promise<number> {
-  try {
-    const result = await prisma.refreshToken.deleteMany({
-      where: {
-        OR: [{ expiresAt: { lt: new Date() } }, { isRevoked: true }],
-      },
-    });
-
-    if (result.count > 0) {
-      logger.info('Cleaned up expired/revoked tokens', {
-        count: result.count,
-        operation: 'token.cleanup',
-      });
-    }
-
-    return result.count;
-  } catch (error) {
-    logger.error('Failed to cleanup tokens', {
-      error: error instanceof Error ? error.message : 'Unknown',
-      operation: 'token.cleanup',
-    });
-    throw error;
-  }
-}
-
-/**
  * Verify device fingerprint matches stored fingerprint
- * Returns true if match OR if no fingerprint stored (backward compat)
  */
 export async function verifyTokenFingerprint(
   jti: string,
@@ -181,7 +152,12 @@ export async function verifyTokenFingerprint(
 
     // If no fingerprint stored (old tokens), allow (backward compat)
     if (!token.fingerprint) {
-      return true;
+      logger.error('Token missing fingerprint - rejecting for security', {
+        jti,
+        operation: 'token.verifyFingerprint',
+        severity: 'high',
+      });
+      return false;
     }
 
     // Compare fingerprints (constant-time)

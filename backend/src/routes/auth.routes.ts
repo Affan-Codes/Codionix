@@ -10,7 +10,7 @@ import {
 } from '../validators/auth.validator.js';
 import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import oauthRoutes from './oauth.routes.js';
 import { csrfProtection } from '../middleware/csrf.middleware.js';
 
@@ -36,6 +36,7 @@ const verificationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 /**
@@ -54,6 +55,7 @@ const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 const refreshLimiter = rateLimit({
@@ -69,10 +71,11 @@ const refreshLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
+    const ipKey = ipKeyGenerator(req.ip || '');
     const cookieFingerprint = req.signedCookies?.refresh_token
       ? req.signedCookies.refresh_token.substring(0, 16)
       : 'anonymous';
-    return `${req.ip}:${cookieFingerprint}`;
+    return `${ipKey}:${cookieFingerprint}`;
   },
 });
 

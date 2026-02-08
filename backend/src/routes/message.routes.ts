@@ -8,7 +8,7 @@ import {
   deleteMessageSchema,
   unreadCountSchema,
 } from '../validators/message.validator.js';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 const router = Router();
 
@@ -32,6 +32,7 @@ const messageLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ''),
 });
 
 // ===================================

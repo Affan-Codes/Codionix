@@ -1,25 +1,32 @@
 import { prisma } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 
-/**
- * Clean up expired and revoked refresh tokens
- */
 export async function cleanupExpiredTokens(): Promise<void> {
   const startTime = Date.now();
 
   try {
-    // Delete expired or revoked tokens
-    const result = await prisma.refreshToken.deleteMany({
+    // Delete revoked tokens first (typically fewer records)
+    const revokedResult = await prisma.refreshToken.deleteMany({
       where: {
-        OR: [{ expiresAt: { lt: new Date() } }, { isRevoked: true }],
+        isRevoked: true,
       },
     });
 
+    // Delete expired tokens
+    const expiredResult = await prisma.refreshToken.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    const totalDeleted = revokedResult.count + expiredResult.count;
     const duration = Date.now() - startTime;
 
-    if (result.count > 0) {
+    if (totalDeleted > 0) {
       logger.info('Cleaned up expired tokens', {
-        tokensDeleted: result.count,
+        tokensDeleted: totalDeleted,
+        revokedTokens: revokedResult.count,
+        expiredTokens: expiredResult.count,
         duration: `${duration}ms`,
         operation: 'jobs.cleanupTokens',
         category: 'background_job',
